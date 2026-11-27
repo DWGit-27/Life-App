@@ -1,38 +1,39 @@
 import { useMemo, useState } from 'react';
 import { AgendaList, groupAgenda, useSources, useUndo } from '../components/Agenda';
-import { CrudList } from '../components/Crud';
-import type { FieldSpec } from '../components/Form';
-import { AREAS, save, type Area, type Task } from '../db';
+import { CrudList, useRows } from '../components/Crud';
+import { AREAS, save, type Area, type Objective, type Task } from '../db';
 import { buildAgenda } from '../agenda';
 import { describeSchedule } from '../lib/schedule';
-import { relativeLabel, today } from '../lib/dates';
+import { diffDays, formatDate, relativeLabel, today } from '../lib/dates';
+import { openEdit } from '../registry';
 
-export const taskFields: FieldSpec[] = [
-  { key: 'title', label: 'Task', type: 'text', required: true },
-  { key: 'area', label: 'Area', type: 'select', options: AREAS, required: true },
-  { key: 'project', label: 'Project', type: 'text', placeholder: 'e.g. Q1 report', hint: 'Group work tasks by project' },
-  { key: 'schedule', label: 'When', type: 'schedule', optional: true, hint: 'Leave the date empty for an "anytime" task' },
-  { key: 'priority', label: 'Priority', type: 'select', options: ['low', 'normal', 'high'] },
-  { key: 'notes', label: 'Notes', type: 'textarea' },
-];
+type Tab = 'due' | 'mine' | 'objectives';
 
-export default function Tasks() {
+export function objectiveProgress(o: Objective, tasks: Task[], doneIds: Set<string>) {
+  const linked = tasks.filter((t) => t.objectiveId === o.id);
+  const finite = linked.filter((t) => !t.schedule?.start || t.schedule.freq === 'once');
+  return { linked, done: finite.filter((t) => doneIds.has(t.id)).length, total: finite.length };
+}
+
+export default function Tasks({ sub, setSub }: { sub?: string; setSub: (s: string) => void }) {
+  const tab: Tab = sub === 'mine' || sub === 'objectives' ? sub : 'due';
   const s = useSources();
+  const objectives = useRows<Objective>('objectives');
   const [horizon, setHorizon] = useState(14);
   const [area, setArea] = useState<Area | ''>('');
-  const [tab, setTab] = useState<'agenda' | 'mine'>('agenda');
   const [quick, setQuick] = useState('');
   const t = today();
   const items = useMemo(() => buildAgenda(s, t, horizon).filter((i) => !area || i.area === area), [s, t, horizon, area]);
   const g = groupAgenda(items);
   const { onDone, toast } = useUndo();
-  const mine = s.tasks.filter((x) => !area || x.area === area);
-  const doneOnce = new Set(s.completions.filter((c) => c.source === 'task').map((c) => c.sourceId));
-  const projects = [...new Set(s.tasks.filter((x) => x.project).map((x) => x.project!))];
+  const doneIds = new Set(s.completions.filter((c) => c.source === 'task').map((c) => c.sourceId));
+  const open = s.tasks.filter((x) => !(x.schedule?.freq === 'once' && doneIds.has(x.id)) && !(!x.schedule && doneIds.has(x.id)));
+  const mine = open.filter((x) => !area || x.area === area);
+  const objName = new Map(objectives.map((o) => [o.id, o.title]));
 
   return (
     <div className="page">
-      <h1>Tasks</h1>
+      <h1>Tasks & objectives</h1>
       <form
         className="quick"
         onSubmit={async (e) => {
@@ -46,20 +47,25 @@ export default function Tasks() {
         <button className="primary">Add</button>
       </form>
       <div className="tabs">
-        <button className={tab === 'agenda' ? 'on' : ''} onClick={() => setTab('agenda')}>
+        <button className={tab === 'due' ? 'on' : ''} onClick={() => setSub('due')}>
           Everything due
         </button>
-        <button className={tab === 'mine' ? 'on' : ''} onClick={() => setTab('mine')}>
-          My tasks & projects
+        <button className={tab === 'mine' ? 'on' : ''} onClick={() => setSub('mine')}>
+          My tasks
+        </button>
+        <button className={tab === 'objectives' ? 'on' : ''} onClick={() => setSub('objectives')}>
+          Objectives
         </button>
         <span className="grow" />
-        <select value={area} onChange={(e) => setArea(e.target.value as Area | '')} aria-label="Filter by area">
-          <option value="">All areas</option>
-          {AREAS.map((a) => (
-            <option key={a}>{a}</option>
-          ))}
-        </select>
-        {tab === 'agenda' && (
+        {tab !== 'objectives' && (
+          <select value={area} onChange={(e) => setArea(e.target.value as Area | '')} aria-label="Filter by area">
+            <option value="">All areas</option>
+            {AREAS.map((a) => (
+              <option key={a}>{a}</option>
+            ))}
+          </select>
+        )}
+        {tab === 'due' && (
           <select value={horizon} onChange={(e) => setHorizon(Number(e.target.value))} aria-label="How far ahead">
             <option value={7}>Next 7 days</option>
             <option value={14}>Next 2 weeks</option>
@@ -69,9 +75,9 @@ export default function Tasks() {
           </select>
         )}
       </div>
-      {tab === 'agenda' ? (
+      {tab === 'due' && (
         <>
-          <p className="muted">Pulled from your tasks, bills, insurance renewals, house jobs and loan payments.</p>
+          <p className="muted">Everything from your tasks, bills, insurance, house, loans and workouts. Tap an item to edit it, ⏰ to move it.</p>
           {g.overdue.length > 0 && (
             <>
               <h2 className="warn">Overdue</h2>
@@ -88,24 +94,30 @@ export default function Tasks() {
               <AgendaList items={g.later} onDone={onDone} />
             </>
           )}
+          <Anytime tasks={mine.filter((x) => !x.schedule?.start)} />
         </>
-      ) : (
+      )}
+      {tab === 'mine' && (
         <CrudList<Task>
           table="tasks"
-          rows={mine.filter((x) => !(x.schedule?.freq === 'once' && doneOnce.has(x.id)))}
-          noun="task"
-          fields={taskFields.map((f) => (f.key === 'project' ? { ...f, placeholder: projects.length ? projects.join(', ') : f.placeholder } : f))}
+          rows={mine}
           defaults={() => ({ area: (area || 'Personal') as Area, priority: 'normal' })}
-          sort={(a, b) => (a.project ?? '~').localeCompare(b.project ?? '~') || (a.schedule?.start ?? '~').localeCompare(b.schedule?.start ?? '~')}
-          empty="No tasks yet. Use quick add above, or add one with a schedule."
+          sort={(a, b) => (objName.get(a.objectiveId ?? '') ?? a.project ?? '~').localeCompare(objName.get(b.objectiveId ?? '') ?? b.project ?? '~') || (a.schedule?.start ?? '~').localeCompare(b.schedule?.start ?? '~')}
+          empty="No tasks yet. Use quick add above, or add one with a schedule and steps."
           renderRow={(x) => (
             <div className="row">
               <div className="grow">
                 <b>{x.title}</b>
                 <div className="meta">
-                  {x.area}
-                  {x.project && ` · ${x.project}`}
-                  {x.schedule?.start ? ` · ${x.schedule.freq === 'once' ? relativeLabel(x.schedule.start) : describeSchedule(x.schedule)}` : ' · Anytime'}
+                  {[
+                    x.area,
+                    objName.get(x.objectiveId ?? '') && `🎯 ${objName.get(x.objectiveId!)}`,
+                    x.project,
+                    x.schedule?.start ? (x.schedule.freq === 'once' ? relativeLabel(x.schedule.start) : describeSchedule(x.schedule)) : 'Anytime',
+                    x.checklist?.length && `☑ ${x.checklist.filter((c) => c.done).length}/${x.checklist.length}`,
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')}
                 </div>
               </div>
               {x.priority === 'high' && <span className="pill hot">High</span>}
@@ -113,7 +125,77 @@ export default function Tasks() {
           )}
         />
       )}
+      {tab === 'objectives' && <Objectives objectives={objectives} tasks={s.tasks} doneIds={doneIds} />}
       {toast}
     </div>
+  );
+}
+
+function Anytime({ tasks }: { tasks: Task[] }) {
+  if (!tasks.length) return null;
+  return (
+    <>
+      <h2>Anytime</h2>
+      <ul className="agenda">
+        {tasks.map((x) => (
+          <li key={x.id}>
+            <div className="agenda-row">
+              <button className="tick" aria-label={`Mark ${x.title} done`} onClick={() => save('completions', { source: 'task', sourceId: x.id, date: 'anytime', completedOn: today() } as any)} />
+              <button className="agenda-body" onClick={() => openEdit({ table: 'tasks', id: x.id })}>
+                <div className="title">{x.title}</div>
+                <div className="meta">{[x.area, x.project].filter(Boolean).join(' · ')}</div>
+              </button>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </>
+  );
+}
+
+function Objectives({ objectives, tasks, doneIds }: { objectives: Objective[]; tasks: Task[]; doneIds: Set<string> }) {
+  const t = today();
+  const order = { active: 0, paused: 1, done: 2 } as const;
+  return (
+    <CrudList<Objective>
+      table="objectives"
+      rows={objectives}
+      sort={(a, b) => order[a.status] - order[b.status] || (a.targetDate ?? '~').localeCompare(b.targetDate ?? '~')}
+      empty="Objectives are bigger goals, like 'Run a 10k by June' or 'Pay off the car loan'. Link tasks to them to track progress."
+      renderRow={(o) => {
+        const p = objectiveProgress(o, tasks, doneIds);
+        const pct = p.total ? (p.done / p.total) * 100 : o.status === 'done' ? 100 : 0;
+        const days = o.targetDate ? diffDays(o.targetDate, t) : undefined;
+        return (
+          <div>
+            <div className="row">
+              <b className="grow">
+                🎯 {o.title}
+                {o.status !== 'active' && <span className="pill">{o.status === 'done' ? 'Done' : 'Paused'}</span>}
+              </b>
+              <span className="muted">{o.area}</span>
+            </div>
+            {o.why && <div className="meta">{o.why}</div>}
+            <div className="bar">
+              <i style={{ width: `${pct}%` }} />
+            </div>
+            <div className="meta">
+              {p.total ? `${p.done} of ${p.total} tasks done` : 'No tasks linked yet'}
+              {o.targetDate && ` · target ${formatDate(o.targetDate)}`}
+              {days !== undefined && o.status === 'active' && (days < 0 ? <span className="warn"> · {-days} days past target</span> : ` · ${days} days left`)}
+            </div>
+            <button
+              className="link"
+              onClick={(e) => {
+                e.stopPropagation();
+                openEdit({ table: 'tasks', initial: { area: o.area, priority: 'normal', objectiveId: o.id } });
+              }}
+            >
+              + Add a task to this
+            </button>
+          </div>
+        );
+      }}
+    />
   );
 }

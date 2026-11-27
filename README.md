@@ -4,18 +4,19 @@ One place for everything that needs doing: tasks and work projects, bills, insur
 
 It is an installable web app (PWA). Open it in Chrome on Android or desktop and choose **Install** / **Add to Home screen**. It works offline. Data is stored on the device (IndexedDB); use **Settings → Download backup** to back up or move data. Sync between devices is planned.
 
-## Modules (MVP)
+## Tabs
 
-| Module | What it holds | What it adds to the agenda |
+| Tab | What it holds | Feeds My Day with |
 |---|---|---|
-| Tasks | One-off, recurring and "anytime" tasks; work projects | Each due date |
-| Bills | Amount, schedule, provider, account, reference, direct debit, contract end | Each payment |
-| Insurance | Insurer, policy no., cover, excess, premium, renewal date | Renewal reminder (N days before) |
-| House | Cleaning rota and maintenance jobs | Each occurrence (missed ones fold together) |
-| Money | Income and planned spending; spending log by month | — |
-| Loans | Mortgage/loans with amortisation, overpayment what-if, fixed-rate end | Monthly payment, remortgage reminder |
+| My Day | Week strip, overdue / today / next 7 days, today's workout, objectives, backup reminder | |
+| Tasks & objectives | One-off, recurring and anytime tasks with steps; objectives with progress | Task due dates |
+| Money | Overview (net worth, monthly plan, next 30 days going out), Bills, Insurance, Loans, Investments, Budget, Spending | Bill payments, renewal heads-ups, loan payments, remortgage reminder |
+| House | Cleaning rota, maintenance, inventory (serials, receipts, warranties) | Chores, warranty-ending heads-ups |
+| Health | Gym planner, workout log, streaks, personal bests | Planned workouts |
 
-Next: sync and sharing, workouts, house inventory, investments, Android APK.
+Tap anything in a list to edit it. ⏰ moves an item to another day. 🔍 (or `/`) searches everything.
+
+Next: sync and sharing, phone notifications, Android APK.
 
 ## Development
 

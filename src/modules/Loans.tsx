@@ -1,23 +1,10 @@
 import { useState } from 'react';
 import { CrudList, useRows } from '../components/Crud';
-import type { FieldSpec } from '../components/Form';
 import type { Loan } from '../db';
 import { summarise } from '../lib/mortgage';
 import { formatDate, today } from '../lib/dates';
 import { money } from '../lib/format';
 
-const fields: FieldSpec[] = [
-  { key: 'name', label: 'Name', type: 'text', required: true, placeholder: 'e.g. Mortgage' },
-  { key: 'kind', label: 'Type', type: 'select', options: [{ value: 'mortgage', label: 'Mortgage' }, { value: 'loan', label: 'Loan' }, { value: 'credit', label: 'Car finance / credit' }], required: true },
-  { key: 'lender', label: 'Lender', type: 'text' },
-  { key: 'principal', label: 'Amount borrowed (£)', type: 'money', required: true, hint: 'Or the balance when the current deal started' },
-  { key: 'annualRate', label: 'Interest rate (% per year)', type: 'number', required: true },
-  { key: 'termMonths', label: 'Term (months)', type: 'number', required: true, hint: '25 years = 300 months' },
-  { key: 'firstPayment', label: 'First payment date', type: 'date', required: true },
-  { key: 'extraMonthly', label: 'Overpayment each month (£)', type: 'money' },
-  { key: 'fixedUntil', label: 'Fixed rate ends', type: 'date', hint: "You'll get a remortgage reminder 4 months before" },
-  { key: 'notes', label: 'Notes', type: 'textarea' },
-];
 
 function LoanDetail({ loan }: { loan: Loan }) {
   const [extra, setExtra] = useState(loan.extraMonthly ?? 0);
@@ -107,8 +94,7 @@ export default function Loans() {
   const current = loans.find((l) => l.id === sel) ?? loans[0];
   const total = loans.reduce((a, l) => a + summarise(l, t).balanceNow, 0);
   return (
-    <div className="page">
-      <h1>Loans & mortgage</h1>
+    <>
       {loans.length > 0 && (
         <div className="stats">
           <div className="stat">
@@ -121,7 +107,6 @@ export default function Loans() {
         table="loans"
         rows={loans}
         noun="loan"
-        fields={fields}
         defaults={() => ({ kind: 'mortgage', termMonths: 300 })}
         empty="Add your mortgage to see the balance, payoff date and how overpaying helps."
         renderRow={(l) => {
@@ -149,7 +134,6 @@ export default function Loans() {
         </div>
       )}
       {current && <LoanDetail key={current.id + current.updatedAt} loan={current} />}
-      <p className="muted">Investments tracking is coming in the next phase.</p>
-    </div>
+    </>
   );
 }

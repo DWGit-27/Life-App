@@ -11,6 +11,7 @@ export default function Settings({ installPrompt }: { installPrompt: any }) {
     a.download = `life-app-backup-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     URL.revokeObjectURL(a.href);
+    await db.settings.put({ key: 'lastBackup', value: Date.now() });
     setMsg('Backup downloaded.');
   };
   const upload = async (f: File | undefined) => {
@@ -83,7 +84,7 @@ export default function Settings({ installPrompt }: { installPrompt: any }) {
         <h2>Coming next</h2>
         <ul>
           <li>Sync between your phone and computer, with separate accounts and optional sharing</li>
-          <li>Workouts, work projects, house inventory and investments</li>
+          <li>Reminders as phone notifications</li>
           <li>Android app (APK) built automatically on GitHub</li>
         </ul>
       </section>

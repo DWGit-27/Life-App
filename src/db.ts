@@ -13,9 +13,16 @@ export interface Base {
 export type Area = 'Personal' | 'Work' | 'Home' | 'Money' | 'Health';
 export const AREAS: Area[] = ['Personal', 'Work', 'Home', 'Money', 'Health'];
 
+export interface CheckItem {
+  text: string;
+  done: boolean;
+}
+
 export interface Task extends Base {
   title: string;
   area: Area;
+  objectiveId?: string;
+  checklist?: CheckItem[];
   schedule?: Schedule; // freq 'once' for a one-off task with a due date
   priority?: 'low' | 'normal' | 'high';
   project?: string;
@@ -101,12 +108,79 @@ export interface Txn extends Base {
   note?: string;
 }
 
+export interface Objective extends Base {
+  title: string;
+  area: Area;
+  why?: string;
+  targetDate?: ISODate;
+  status: 'active' | 'done' | 'paused';
+  notes?: string;
+}
+
+export interface Investment extends Base {
+  name: string;
+  kind: string; // ISA, Pension, Shares, Savings, Premium Bonds, Crypto, Property, Other
+  provider?: string;
+  value: number;
+  valueDate: ISODate;
+  contribution?: number;
+  contributionSchedule?: Schedule;
+  history?: { date: ISODate; value: number }[];
+  notes?: string;
+}
+
+export interface InventoryItem extends Base {
+  name: string;
+  room?: string;
+  category?: string;
+  brand?: string;
+  model?: string;
+  serial?: string;
+  purchaseDate?: ISODate;
+  price?: number;
+  warrantyUntil?: ISODate;
+  where?: string; // where the receipt/manual is
+  notes?: string;
+}
+
+export interface Exercise {
+  name: string;
+  sets?: number;
+  reps?: string;
+  weight?: number;
+}
+
+export interface WorkoutPlan extends Base {
+  name: string;
+  schedule?: Schedule;
+  exercises: Exercise[];
+  notes?: string;
+}
+
+export interface WorkoutLog extends Base {
+  date: ISODate;
+  planId?: string;
+  name: string;
+  minutes?: number;
+  entries: Exercise[];
+  feeling?: number; // 1-5
+  notes?: string;
+}
+
+/** Moves one occurrence of a source to another date. */
+export interface Snooze extends Base {
+  source: SourceType;
+  sourceId: string;
+  date: ISODate;
+  to: ISODate;
+}
+
 export interface Setting {
   key: string;
   value: unknown;
 }
 
-export type SourceType = 'task' | 'bill' | 'policy' | 'house' | 'loan';
+export type SourceType = 'task' | 'bill' | 'policy' | 'house' | 'loan' | 'workout' | 'warranty' | 'investment';
 
 export class LifeDB extends Dexie {
   tasks!: EntityTable<Task, 'id'>;
@@ -118,6 +192,12 @@ export class LifeDB extends Dexie {
   budget!: EntityTable<BudgetLine, 'id'>;
   txns!: EntityTable<Txn, 'id'>;
   settings!: EntityTable<Setting, 'key'>;
+  objectives!: EntityTable<Objective, 'id'>;
+  investments!: EntityTable<Investment, 'id'>;
+  inventory!: EntityTable<InventoryItem, 'id'>;
+  plans!: EntityTable<WorkoutPlan, 'id'>;
+  workouts!: EntityTable<WorkoutLog, 'id'>;
+  snoozes!: EntityTable<Snooze, 'id'>;
 
   constructor() {
     super('life-app');
@@ -132,12 +212,20 @@ export class LifeDB extends Dexie {
       txns: 'id, date, updatedAt',
       settings: 'key',
     });
+    this.version(2).stores({
+      objectives: 'id, updatedAt',
+      investments: 'id, updatedAt',
+      inventory: 'id, updatedAt',
+      plans: 'id, updatedAt',
+      workouts: 'id, date, updatedAt',
+      snoozes: 'id, [source+sourceId], updatedAt',
+    });
   }
 }
 
 export const db = new LifeDB();
 
-export const DATA_TABLES = ['tasks', 'completions', 'bills', 'policies', 'house', 'loans', 'budget', 'txns'] as const;
+export const DATA_TABLES = ['tasks', 'completions', 'bills', 'policies', 'house', 'loans', 'budget', 'txns', 'objectives', 'investments', 'inventory', 'plans', 'workouts', 'snoozes'] as const;
 export type DataTable = (typeof DATA_TABLES)[number];
 
 export function uid(): string {

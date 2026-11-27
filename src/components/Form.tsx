@@ -1,14 +1,17 @@
 import { useState, type ReactNode } from 'react';
 import type { Schedule, Freq } from '../lib/schedule';
+import type { CheckItem, Exercise } from '../db';
 import { today } from '../lib/dates';
 
-export type FieldType = 'text' | 'textarea' | 'number' | 'money' | 'date' | 'select' | 'checkbox' | 'schedule';
+export type FieldType = 'text' | 'textarea' | 'number' | 'money' | 'date' | 'select' | 'checkbox' | 'schedule' | 'checklist' | 'exercises';
 
 export interface FieldSpec {
   key: string;
   label: string;
   type: FieldType;
   options?: readonly string[] | { value: string; label: string }[];
+  /** extra content rendered under the field, given the current values */
+  extra?: (v: Record<string, any>) => ReactNode;
   required?: boolean;
   placeholder?: string;
   hint?: string;
@@ -54,6 +57,78 @@ export function ScheduleInput({ value, onChange, recurringOnly, optional }: { va
   );
 }
 
+export function ChecklistInput({ value, onChange }: { value?: CheckItem[]; onChange: (v: CheckItem[]) => void }) {
+  const list = value ?? [];
+  const [draft, setDraft] = useState('');
+  const add = () => {
+    if (!draft.trim()) return;
+    onChange([...list, { text: draft.trim(), done: false }]);
+    setDraft('');
+  };
+  return (
+    <div className="checklist">
+      {list.map((c, i) => (
+        <div key={i} className="row">
+          <input type="checkbox" checked={c.done} onChange={(e) => onChange(list.map((x, j) => (j === i ? { ...x, done: e.target.checked } : x)))} />
+          <input value={c.text} className={c.done ? 'struck' : ''} onChange={(e) => onChange(list.map((x, j) => (j === i ? { ...x, text: e.target.value } : x)))} />
+          <button type="button" className="icon" aria-label="Remove step" onClick={() => onChange(list.filter((_, j) => j !== i))}>
+            ✕
+          </button>
+        </div>
+      ))}
+      <div className="row">
+        <input
+          value={draft}
+          placeholder="Add a step…"
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              add();
+            }
+          }}
+        />
+        <button type="button" onClick={add}>
+          Add
+        </button>
+      </div>
+    </div>
+  );
+}
+
+export function ExercisesInput({ value, onChange }: { value?: Exercise[]; onChange: (v: Exercise[]) => void }) {
+  const list = value ?? [];
+  const set = (i: number, patch: Partial<Exercise>) => onChange(list.map((x, j) => (j === i ? { ...x, ...patch } : x)));
+  const num = (v: string) => (v === '' ? undefined : Number(v));
+  return (
+    <div className="exercises">
+      {list.length > 0 && (
+        <div className="ex-head muted">
+          <span>Exercise</span>
+          <span>Sets</span>
+          <span>Reps</span>
+          <span>kg</span>
+          <span />
+        </div>
+      )}
+      {list.map((x, i) => (
+        <div key={i} className="ex-row">
+          <input value={x.name} placeholder="e.g. Squat" onChange={(e) => set(i, { name: e.target.value })} />
+          <input type="number" inputMode="numeric" value={x.sets ?? ''} onChange={(e) => set(i, { sets: num(e.target.value) })} aria-label="Sets" />
+          <input value={x.reps ?? ''} placeholder="8-10" onChange={(e) => set(i, { reps: e.target.value })} aria-label="Reps" />
+          <input type="number" inputMode="decimal" step="0.5" value={x.weight ?? ''} onChange={(e) => set(i, { weight: num(e.target.value) })} aria-label="Weight kg" />
+          <button type="button" className="icon" aria-label="Remove exercise" onClick={() => onChange(list.filter((_, j) => j !== i))}>
+            ✕
+          </button>
+        </div>
+      ))}
+      <button type="button" onClick={() => onChange([...list, { name: '', sets: 3, reps: '10' }])}>
+        + Add exercise
+      </button>
+    </div>
+  );
+}
+
 function FieldInput({ f, value, onChange }: { f: FieldSpec; value: any; onChange: (v: any) => void }) {
   switch (f.type) {
     case 'textarea':
@@ -87,6 +162,10 @@ function FieldInput({ f, value, onChange }: { f: FieldSpec; value: any; onChange
     }
     case 'checkbox':
       return <input type="checkbox" checked={!!value} onChange={(e) => onChange(e.target.checked)} />;
+    case 'checklist':
+      return <ChecklistInput value={value} onChange={onChange} />;
+    case 'exercises':
+      return <ExercisesInput value={value} onChange={onChange} />;
     case 'schedule':
       return <ScheduleInput value={value} onChange={onChange} recurringOnly={f.recurringOnly} optional={f.optional} />;
     default:
@@ -117,7 +196,9 @@ export function EditorModal({
   onSave,
   onDelete,
   onClose,
+  actions,
 }: {
+  actions?: (v: Record<string, any>, close: () => void) => ReactNode;
   title: string;
   fields: FieldSpec[];
   initial: Record<string, any>;
@@ -139,16 +220,20 @@ export function EditorModal({
       <form onSubmit={submit} className="form">
         {fields
           .filter((f) => f.when?.(v) ?? true)
-          .map((f) => (
-            <label key={f.key} className={f.type === 'checkbox' ? 'check' : ''}>
+          .map((f) => {
+            const Wrap = f.type === 'checklist' || f.type === 'exercises' || f.type === 'schedule' ? 'div' : 'label';
+            return (
+            <Wrap key={f.key} className={`field ${f.type === 'checkbox' ? 'check' : ''}`}>
               <span>
                 {f.label}
                 {f.required && ' *'}
               </span>
               <FieldInput f={f} value={v[f.key]} onChange={(x) => setV((cur) => ({ ...cur, [f.key]: x }))} />
               {f.hint && <small className="muted">{f.hint}</small>}
-            </label>
-          ))}
+              {f.extra?.(v)}
+            </Wrap>
+            );
+          })}
         {err && <p className="error">{err}</p>}
         <footer>
           {onDelete && (
@@ -163,6 +248,7 @@ export function EditorModal({
               Delete
             </button>
           )}
+          {actions?.(v, onClose)}
           <span className="grow" />
           <button type="button" onClick={onClose}>
             Cancel
