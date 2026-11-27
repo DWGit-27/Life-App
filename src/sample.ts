@@ -1,4 +1,4 @@
-import { save, type Bill, type BudgetLine, type HouseJob, type Loan, type Policy, type Task, type Txn } from './db';
+import { save, uid, type Bill, type BudgetLine, type HouseJob, type InventoryItem, type Investment, type Loan, type Objective, type Policy, type Task, type Txn, type WorkoutLog, type WorkoutPlan } from './db';
 import { addDays, addMonths, today } from './lib/dates';
 
 /** Example data so the app can be tried out. All marked with notes "example". */
@@ -43,11 +43,39 @@ export async function loadSample() {
     const date = addDays(t, d);
     if (date.slice(0, 7) === t.slice(0, 7)) await save<Txn>('txns', { date, kind: 'expense', category, amount, note: 'example' });
   }
+  const objWork = uid();
+  const obj10k = uid();
+  await save<Objective>('objectives', { id: objWork, title: 'Deliver the Q4 review', area: 'Work', why: 'Sets next year\'s budget', targetDate: addDays(t, 20), status: 'active', notes: 'example' });
+  await save<Objective>('objectives', { id: obj10k, title: 'Run a 10k', area: 'Health', targetDate: addMonths(t, 4), status: 'active', notes: 'example' });
   const tasks: Partial<Task>[] = [
-    { title: 'Prepare quarterly report', area: 'Work', project: 'Q4 review', priority: 'high', schedule: { freq: 'once', interval: 1, start: addDays(t, 2) } },
+    { title: 'Prepare quarterly report', area: 'Work', project: 'Q4 review', objectiveId: objWork, priority: 'high', schedule: { freq: 'once', interval: 1, start: addDays(t, 2) }, checklist: [{ text: 'Pull numbers', done: true }, { text: 'Draft slides', done: false }, { text: 'Review with manager', done: false }] },
+    { title: 'Book review meeting', area: 'Work', objectiveId: objWork, schedule: { freq: 'once', interval: 1, start: t } },
+    { title: 'Sign up for a 10k race', area: 'Health', objectiveId: obj10k },
     { title: 'Team 1:1s', area: 'Work', schedule: { freq: 'weekly', interval: 1, start: addDays(t, 1) } },
     { title: 'Book dentist', area: 'Health', priority: 'normal' },
-    { title: 'Gym: upper body', area: 'Health', schedule: { freq: 'weekly', interval: 1, start: t } },
   ];
   for (const x of tasks) await save<Task>('tasks', { ...(x as Task), notes: 'example' });
+  const investments: Partial<Investment>[] = [
+    { name: 'Stocks & Shares ISA', kind: 'Stocks & Shares ISA', provider: 'Platform A', value: 18450, valueDate: t, contribution: 250, contributionSchedule: monthly(28), history: [{ date: addMonths(t, -3), value: 17200 }] },
+    { name: 'Workplace pension', kind: 'Workplace pension', provider: 'Pension co.', value: 42300, valueDate: addDays(t, -20) },
+    { name: 'Home', kind: 'Property', value: 295000, valueDate: addMonths(t, -2), notes: 'Estimated from local sold prices' },
+    { name: 'Easy access savings', kind: 'Savings account', provider: 'Bank', value: 6200, valueDate: t },
+  ];
+  for (const i of investments) await save<Investment>('investments', { ...(i as Investment), notes: 'example' });
+  const inventory: Partial<InventoryItem>[] = [
+    { name: 'Washing machine', category: 'Appliance', room: 'Kitchen', brand: 'Brand W', model: 'WM-800', serial: 'SN12345', purchaseDate: addMonths(t, -23), price: 449, warrantyUntil: addDays(t, 20), where: 'Email receipt' },
+    { name: 'Laptop', category: 'Electronics', room: 'Office', brand: 'Brand L', price: 1199, purchaseDate: addMonths(t, -8), warrantyUntil: addMonths(t, 16) },
+    { name: 'Sofa', category: 'Furniture', room: 'Living room', price: 899, purchaseDate: addMonths(t, -30) },
+  ];
+  for (const i of inventory) await save<InventoryItem>('inventory', { ...(i as InventoryItem), notes: 'example' });
+  const push = uid();
+  await save<WorkoutPlan>('plans', { id: push, name: 'Upper body', schedule: { freq: 'weekly', interval: 1, start: t }, exercises: [{ name: 'Bench press', sets: 4, reps: '8', weight: 60 }, { name: 'Pull-ups', sets: 3, reps: '8' }, { name: 'Shoulder press', sets: 3, reps: '10', weight: 30 }], notes: 'example' });
+  await save<WorkoutPlan>('plans', { name: 'Legs', schedule: { freq: 'weekly', interval: 1, start: addDays(t, 2) }, exercises: [{ name: 'Squat', sets: 4, reps: '6', weight: 80 }, { name: 'Romanian deadlift', sets: 3, reps: '10', weight: 60 }], notes: 'example' });
+  await save<WorkoutPlan>('plans', { name: '5k run', schedule: { freq: 'weekly', interval: 1, start: addDays(t, 4) }, exercises: [], notes: 'example' });
+  const logs: Partial<WorkoutLog>[] = [
+    { name: 'Upper body', planId: push, date: addDays(t, -7), minutes: 55, feeling: 4, entries: [{ name: 'Bench press', sets: 4, reps: '8', weight: 57.5 }, { name: 'Shoulder press', sets: 3, reps: '10', weight: 27.5 }] },
+    { name: 'Legs', date: addDays(t, -5), minutes: 50, feeling: 3, entries: [{ name: 'Squat', sets: 4, reps: '6', weight: 77.5 }] },
+    { name: '5k run', date: addDays(t, -14), minutes: 29, feeling: 5, entries: [] },
+  ];
+  for (const l of logs) await save<WorkoutLog>('workouts', { ...(l as WorkoutLog), notes: 'example' });
 }

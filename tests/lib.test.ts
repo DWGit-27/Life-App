@@ -86,3 +86,24 @@ describe('agenda', () => {
     expect(buildAgenda(s, '2026-11-27').map((i) => i.date)).toEqual(['2026-12-01']);
   });
 });
+
+describe('agenda extras', () => {
+  it('snoozes move an occurrence and workouts/warranties appear', () => {
+    const s: Sources = {
+      ...empty,
+      house: [{ ...base, id: 'h1', kind: 'cleaning', title: 'Hoover', schedule: { freq: 'weekly', interval: 1, start: '2026-11-27' } }],
+      snoozes: [{ ...base, id: 'z', source: 'house', sourceId: 'h1', date: '2026-11-27', to: '2026-11-29' }],
+      plans: [{ ...base, id: 'w1', name: 'Legs', exercises: [], schedule: { freq: 'weekly', interval: 1, start: '2026-11-28' } }],
+      inventory: [{ ...base, id: 'i1', name: 'Washing machine', warrantyUntil: '2026-12-20' }],
+    };
+    const a = buildAgenda(s, '2026-11-27', 7);
+    const h = a.find((i) => i.sourceId === 'h1')!;
+    expect(h.date).toBe('2026-11-29');
+    expect(h.occurrence).toBe('2026-11-27');
+    expect(h.snoozed).toBe(true);
+    expect(a.find((i) => i.source === 'workout')?.area).toBe('Health');
+    // warranty reminder 30 days before: 2026-11-20 -> overdue but within lookback
+    expect(a.find((i) => i.source === 'warranty')?.date).toBe('2026-11-20');
+    expect(a.find((i) => i.source === 'warranty')?.target).toBe('2026-12-20');
+  });
+});
