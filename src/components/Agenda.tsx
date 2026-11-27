@@ -5,6 +5,7 @@ import { buildAgenda, type AgendaItem, type Sources } from '../agenda';
 import { addDays, diffDays, parseISO, relativeLabel, today } from '../lib/dates';
 import { money } from '../lib/format';
 import { openEdit, SOURCE_TABLE } from '../registry';
+import { buzz, showToast } from '../toast';
 
 export function useSources(): Sources {
   const tasks = useRows<Task>('tasks');
@@ -29,6 +30,7 @@ export function useAgenda(horizon = 14) {
 }
 
 export async function complete(item: AgendaItem) {
+  buzz();
   const t = today();
   for (const date of [...item.missed, item.occurrence]) {
     await save<Completion>('completions', { id: uid(), source: item.source, sourceId: item.sourceId, date, completedOn: t });
@@ -147,25 +149,9 @@ export function AgendaList({ items, emptyText, onDone }: { items: AgendaItem[]; 
   );
 }
 
+/** Kept for callers: completing shows a toast with Undo. */
 export function useUndo() {
-  const [last, setLast] = useState<AgendaItem | null>(null);
-  const toast = last && (
-    <div className="toast">
-      Done: {last.title}
-      <button
-        onClick={async () => {
-          await undoComplete(last);
-          setLast(null);
-        }}
-      >
-        Undo
-      </button>
-      <button className="icon" onClick={() => setLast(null)} aria-label="Dismiss">
-        ✕
-      </button>
-    </div>
-  );
-  return { onDone: (i: AgendaItem) => setLast(i), toast };
+  return { onDone: (i: AgendaItem) => showToast(`Done: ${i.title}`, () => undoComplete(i)), toast: null };
 }
 
 /** Heads-up reminders (renewals, warranties) are only overdue once the real deadline passes. */

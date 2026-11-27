@@ -1,7 +1,7 @@
 import { CrudList, useRows } from '../components/Crud';
-import { save, type HouseJob, type InventoryItem } from '../db';
+import { save, type Completion, type HouseJob, type InventoryItem } from '../db';
 import { describeSchedule, nextOccurrence } from '../lib/schedule';
-import { diffDays, formatDate, relativeLabel, today } from '../lib/dates';
+import { agoLabel, diffDays, formatDate, relativeLabel, today } from '../lib/dates';
 import { money } from '../lib/format';
 
 const SUGGEST: Record<HouseJob['kind'], [string, string, number, 'weekly' | 'monthly' | 'yearly'][]> = {
@@ -48,8 +48,11 @@ export default function House({ sub, setSub }: { sub?: string; setSub: (s: strin
 
 function Jobs({ kind }: { kind: HouseJob['kind'] }) {
   const rows = useRows<HouseJob>('house');
+  const completions = useRows<Completion>('completions');
   const t = today();
   const list = rows.filter((r) => r.kind === kind);
+  const lastDone = new Map<string, string>();
+  for (const c of completions) if (c.source === 'house' && (lastDone.get(c.sourceId) ?? '') < c.completedOn) lastDone.set(c.sourceId, c.completedOn);
   const missing = SUGGEST[kind].filter(([title]) => !list.some((r) => r.title.toLowerCase() === title.toLowerCase()));
   return (
     <>
@@ -66,7 +69,10 @@ function Jobs({ kind }: { kind: HouseJob['kind'] }) {
               <div className="grow">
                 <b>{r.title}</b>
                 <div className="meta">{[r.room, describeSchedule(r.schedule), r.assignee].filter(Boolean).join(' · ')}</div>
-                {next && <div className="meta">Next: {relativeLabel(next, t)}</div>}
+                <div className="meta">
+                  {next && `Next: ${relativeLabel(next, t)}`}
+                  {lastDone.get(r.id) && ` · last done ${agoLabel(lastDone.get(r.id)!, t)}`}
+                </div>
               </div>
               {r.estCost ? <div className="amount">{money(r.estCost)}</div> : null}
             </div>
@@ -117,7 +123,8 @@ function Inventory() {
         rows={rows}
         sort={(a, b) => (a.room ?? '~').localeCompare(b.room ?? '~') || a.name.localeCompare(b.name)}
         empty="Add appliances, electronics and valuables, with serial numbers and warranty dates."
-        header={rooms.length > 1 ? <span className="muted">{rooms.join(' · ')}</span> : undefined}
+        groupBy={rooms.length > 1 ? (r) => r.room || 'Unassigned' : undefined}
+        groupExtra={(rs) => <span className="muted">{rs.length} · {money(rs.reduce((a, i) => a + (i.price || 0), 0), { decimals: false })}</span>}
         renderRow={(i) => {
           const left = i.warrantyUntil ? diffDays(i.warrantyUntil, t) : undefined;
           return (

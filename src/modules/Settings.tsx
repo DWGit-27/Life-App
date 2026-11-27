@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { prefs, type TextSize, type Theme } from '../prefs';
 import { DATA_TABLES, db, exportAll, importAll } from '../db';
 import { loadSample } from '../sample';
 
@@ -24,10 +25,63 @@ export default function Settings({ installPrompt }: { installPrompt: any }) {
     }
   };
   const [confirmWipe, setConfirmWipe] = useState(false);
+  const [theme, setTheme] = useState<Theme>(prefs.theme());
+  const [text, setText] = useState<TextSize>(prefs.textSize());
+  const [storage, setStorage] = useState<{ used?: number; persisted?: boolean }>({});
+  useEffect(() => {
+    (async () => {
+      const est = await navigator.storage?.estimate?.();
+      const persisted = await navigator.storage?.persisted?.();
+      setStorage({ used: est?.usage, persisted });
+    })();
+  }, []);
   return (
     <div className="page">
       <h1>Settings</h1>
       {msg && <div className="card notice">{msg}</div>}
+      <section className="card">
+        <h2>Look and feel</h2>
+        <div className="grid-form">
+          <div>
+            <span>Theme</span>
+            <div className="seg" role="radiogroup" aria-label="Theme">
+              {(['auto', 'light', 'dark'] as Theme[]).map((t) => (
+                <button
+                  key={t}
+                  role="radio"
+                  aria-checked={theme === t}
+                  className={theme === t ? 'on' : ''}
+                  onClick={() => {
+                    prefs.setTheme(t);
+                    setTheme(t);
+                  }}
+                >
+                  {t === 'auto' ? 'Auto' : t === 'light' ? '☀️ Light' : '🌙 Dark'}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <span>Text size</span>
+            <div className="seg" role="radiogroup" aria-label="Text size">
+              {(['small', 'normal', 'large', 'xl'] as TextSize[]).map((t) => (
+                <button
+                  key={t}
+                  role="radio"
+                  aria-checked={text === t}
+                  className={text === t ? 'on' : ''}
+                  onClick={() => {
+                    prefs.setTextSize(t);
+                    setText(t);
+                  }}
+                >
+                  {t === 'small' ? 'A−' : t === 'normal' ? 'A' : t === 'large' ? 'A+' : 'A++'}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
       <section className="card">
         <h2>Install on your phone or computer</h2>
         {installPrompt ? (
@@ -45,6 +99,11 @@ export default function Settings({ installPrompt }: { installPrompt: any }) {
       <section className="card">
         <h2>Backup</h2>
         <p className="muted">Your data is stored on this device only, until sync is added. Download a backup now and then, and use it to move data to another device.</p>
+        <p className="muted small-text">
+          {storage.used !== undefined && `Using ${(storage.used / 1024 / 1024).toFixed(1)} MB on this device. `}
+          {storage.persisted === true && 'Storage is protected from automatic clean-up. '}
+          {storage.persisted === false && 'Tip: install the app so your browser keeps the data safe from automatic clean-up. '}
+        </p>
         <div className="row wrap">
           <button onClick={download}>Download backup</button>
           <label className="button">

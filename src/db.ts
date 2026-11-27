@@ -25,6 +25,8 @@ export interface Task extends Base {
   checklist?: CheckItem[];
   schedule?: Schedule; // freq 'once' for a one-off task with a due date
   priority?: 'low' | 'normal' | 'high';
+  /** starred as one of today's focus tasks */
+  focus?: boolean;
   project?: string;
   notes?: string;
 }
@@ -49,6 +51,8 @@ export interface Bill extends Base {
   reference?: string;
   contact?: string;
   contractEnd?: ISODate;
+  /** previous amounts, newest last */
+  history?: { date: ISODate; amount: number }[];
   notes?: string;
 }
 
@@ -175,6 +179,49 @@ export interface Snooze extends Base {
   to: ISODate;
 }
 
+export type MealSlot = 'Breakfast' | 'Lunch' | 'Dinner' | 'Snacks';
+export const MEAL_SLOTS: MealSlot[] = ['Breakfast', 'Lunch', 'Dinner', 'Snacks'];
+
+export interface Macros {
+  kcal: number;
+  protein?: number;
+  carbs?: number;
+  fat?: number;
+}
+
+/** A saved food or recipe, per serving. */
+export interface Food extends Base, Macros {
+  name: string;
+  serving?: string; // e.g. "1 bowl", "100 g"
+  ingredients?: string; // one per line, used for the shopping list
+  favourite?: boolean;
+}
+
+/** One entry in the food diary. Macros are per serving. */
+export interface MealEntry extends Base, Macros {
+  date: ISODate;
+  slot: MealSlot;
+  name: string;
+  servings: number;
+  foodId?: string;
+}
+
+/** A planned meal on a day. */
+export interface MealPlan extends Base, Macros {
+  date: ISODate;
+  slot: MealSlot;
+  name: string;
+  foodId?: string;
+  ingredients?: string;
+  notes?: string;
+}
+
+export interface Weight extends Base {
+  date: ISODate;
+  kg: number;
+  notes?: string;
+}
+
 export interface Setting {
   key: string;
   value: unknown;
@@ -198,6 +245,10 @@ export class LifeDB extends Dexie {
   plans!: EntityTable<WorkoutPlan, 'id'>;
   workouts!: EntityTable<WorkoutLog, 'id'>;
   snoozes!: EntityTable<Snooze, 'id'>;
+  foods!: EntityTable<Food, 'id'>;
+  meals!: EntityTable<MealEntry, 'id'>;
+  mealplans!: EntityTable<MealPlan, 'id'>;
+  weights!: EntityTable<Weight, 'id'>;
 
   constructor() {
     super('life-app');
@@ -220,12 +271,18 @@ export class LifeDB extends Dexie {
       workouts: 'id, date, updatedAt',
       snoozes: 'id, [source+sourceId], updatedAt',
     });
+    this.version(3).stores({
+      foods: 'id, updatedAt',
+      meals: 'id, date, updatedAt',
+      mealplans: 'id, date, updatedAt',
+      weights: 'id, date, updatedAt',
+    });
   }
 }
 
 export const db = new LifeDB();
 
-export const DATA_TABLES = ['tasks', 'completions', 'bills', 'policies', 'house', 'loans', 'budget', 'txns', 'objectives', 'investments', 'inventory', 'plans', 'workouts', 'snoozes'] as const;
+export const DATA_TABLES = ['tasks', 'completions', 'bills', 'policies', 'house', 'loans', 'budget', 'txns', 'objectives', 'investments', 'inventory', 'plans', 'workouts', 'snoozes', 'foods', 'meals', 'mealplans', 'weights'] as const;
 export type DataTable = (typeof DATA_TABLES)[number];
 
 export function uid(): string {

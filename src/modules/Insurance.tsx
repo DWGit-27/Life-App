@@ -1,6 +1,7 @@
 import { CrudList, useRows } from '../components/Crud';
-import type { Policy } from '../db';
-import { diffDays, formatDate, today } from '../lib/dates';
+import { save, type Policy } from '../db';
+import { showToast } from '../toast';
+import { addMonths, diffDays, formatDate, today } from '../lib/dates';
 import { money } from '../lib/format';
 import { perYear } from '../lib/schedule';
 
@@ -44,7 +45,23 @@ export default function Insurance() {
                   </div>
                 )}
               </div>
-              {p.premium ? <div className="amount">{money(p.premium)}</div> : null}
+              <div className="amount-stack">
+                {p.premium ? <div className="amount">{money(p.premium)}</div> : null}
+                {days !== undefined && days <= (p.remindDaysBefore ?? 30) && (
+                  <button
+                    className="small"
+                    title="Bump the renewal date on by a year"
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      const old = p.renewalDate!;
+                      await save<Policy>('policies', { ...p, renewalDate: addMonths(old, 12) });
+                      showToast(`${p.name} renewed to ${formatDate(addMonths(old, 12))}`, () => save<Policy>('policies', { ...p, renewalDate: old }));
+                    }}
+                  >
+                    ✓ Renewed
+                  </button>
+                )}
+              </div>
             </div>
           );
         }}

@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { Schedule, Freq } from '../lib/schedule';
 import type { CheckItem, Exercise } from '../db';
 import { today } from '../lib/dates';
@@ -10,6 +10,10 @@ export interface FieldSpec {
   label: string;
   type: FieldType;
   options?: readonly string[] | { value: string; label: string }[];
+  /** lay out three to a row (short numbers like macros) */
+  half?: boolean;
+  /** when this field changes, also patch other fields (e.g. picking a saved food fills its calories) */
+  apply?: (value: any, v: Record<string, any>) => Record<string, any>;
   /** extra content rendered under the field, given the current values */
   extra?: (v: Record<string, any>) => ReactNode;
   required?: boolean;
@@ -114,9 +118,9 @@ export function ExercisesInput({ value, onChange }: { value?: Exercise[]; onChan
       {list.map((x, i) => (
         <div key={i} className="ex-row">
           <input value={x.name} placeholder="e.g. Squat" onChange={(e) => set(i, { name: e.target.value })} />
-          <input type="number" inputMode="numeric" value={x.sets ?? ''} onChange={(e) => set(i, { sets: num(e.target.value) })} aria-label="Sets" />
-          <input value={x.reps ?? ''} placeholder="8-10" onChange={(e) => set(i, { reps: e.target.value })} aria-label="Reps" />
-          <input type="number" inputMode="decimal" step="0.5" value={x.weight ?? ''} onChange={(e) => set(i, { weight: num(e.target.value) })} aria-label="Weight kg" />
+          <input type="number" inputMode="numeric" value={x.sets ?? ''} placeholder="sets" onChange={(e) => set(i, { sets: num(e.target.value) })} aria-label="Sets" />
+          <input value={x.reps ?? ''} placeholder="reps" onChange={(e) => set(i, { reps: e.target.value })} aria-label="Reps" />
+          <input type="number" inputMode="decimal" step="0.5" value={x.weight ?? ''} placeholder="kg" onChange={(e) => set(i, { weight: num(e.target.value) })} aria-label="Weight kg" />
           <button type="button" className="icon" aria-label="Remove exercise" onClick={() => onChange(list.filter((_, j) => j !== i))}>
             ✕
           </button>
@@ -174,6 +178,22 @@ function FieldInput({ f, value, onChange }: { f: FieldSpec; value: any; onChange
 }
 
 export function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        closeRef.current();
+      }
+    };
+    addEventListener('keydown', onKey);
+    document.body.classList.add('modal-open');
+    return () => {
+      removeEventListener('keydown', onKey);
+      document.body.classList.remove('modal-open');
+    };
+  }, []);
   return (
     <div className="modal-back" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className="modal" role="dialog" aria-label={title}>
@@ -197,8 +217,10 @@ export function EditorModal({
   onDelete,
   onClose,
   actions,
+  onDuplicate,
 }: {
   actions?: (v: Record<string, any>, close: () => void) => ReactNode;
+  onDuplicate?: (v: Record<string, any>) => void;
   title: string;
   fields: FieldSpec[];
   initial: Record<string, any>;
@@ -208,33 +230,58 @@ export function EditorModal({
 }) {
   const [v, setV] = useState<Record<string, any>>(initial);
   const [err, setErr] = useState('');
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const [confirmClose, setConfirmClose] = useState(false);
+  const formRef = useRef<HTMLFormElement>(null);
+  const dirty = JSON.stringify(v) !== JSON.stringify(initial);
+  const tryClose = () => (dirty ? setConfirmClose(true) : onClose());
+  const submit = async (e?: React.FormEvent) => {
+    e?.preventDefault();
     const missing = fields.filter((f) => f.required && (f.when?.(v) ?? true) && (v[f.key] === undefined || v[f.key] === ''));
     if (missing.length) return setErr(`Please fill in: ${missing.map((m) => m.label).join(', ')}`);
     await onSave(v);
     onClose();
   };
   return (
-    <Modal title={title} onClose={onClose}>
-      <form onSubmit={submit} className="form">
+    <Modal title={title} onClose={tryClose}>
+      <form
+        ref={formRef}
+        onSubmit={submit}
+        className="form"
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+            e.preventDefault();
+            submit();
+          }
+        }}
+      >
         {fields
           .filter((f) => f.when?.(v) ?? true)
           .map((f) => {
             const Wrap = f.type === 'checklist' || f.type === 'exercises' || f.type === 'schedule' ? 'div' : 'label';
             return (
-            <Wrap key={f.key} className={`field ${f.type === 'checkbox' ? 'check' : ''}`}>
+            <Wrap key={f.key} className={`field ${f.type === 'checkbox' ? 'check' : ''} ${f.half ? 'third' : ''}`}>
               <span>
                 {f.label}
                 {f.required && ' *'}
               </span>
-              <FieldInput f={f} value={v[f.key]} onChange={(x) => setV((cur) => ({ ...cur, [f.key]: x }))} />
+              <FieldInput f={f} value={v[f.key]} onChange={(x) => setV((cur) => ({ ...cur, [f.key]: x, ...(f.apply?.(x, cur) ?? {}) }))} />
               {f.hint && <small className="muted">{f.hint}</small>}
               {f.extra?.(v)}
             </Wrap>
             );
           })}
         {err && <p className="error">{err}</p>}
+        {confirmClose && (
+          <div className="confirm-bar" role="alert">
+            <span className="grow">Discard your changes?</span>
+            <button type="button" onClick={() => setConfirmClose(false)}>
+              Keep editing
+            </button>
+            <button type="button" className="danger" onClick={onClose}>
+              Discard
+            </button>
+          </div>
+        )}
         <footer>
           {onDelete && (
             <button
@@ -248,9 +295,14 @@ export function EditorModal({
               Delete
             </button>
           )}
+          {onDuplicate && (
+            <button type="button" onClick={() => onDuplicate(v)} title="Make a copy of this">
+              Duplicate
+            </button>
+          )}
           {actions?.(v, onClose)}
           <span className="grow" />
-          <button type="button" onClick={onClose}>
+          <button type="button" className="hide-xs" onClick={tryClose}>
             Cancel
           </button>
           <button type="submit" className="primary">
