@@ -2,11 +2,16 @@ import { useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { AgendaList, groupAgenda, useAgenda, useSources, useUndo } from '../components/Agenda';
 import { useRows } from '../components/Crud';
-import { db, type BudgetLine, type Investment, type Objective, type WorkoutPlan } from '../db';
+import { db, save, type BudgetLine, type Completion, type Investment, type MealEntry, type Objective, type WorkoutPlan } from '../db';
+import { nextOccurrence } from '../lib/schedule';
+import { sumMacros } from '../lib/nutrition';
+import { useTargets } from './Nutrition';
+import { openEdit } from '../registry';
+import { buzz, showToast } from '../toast';
 import { monthlyTotals } from './Money';
 import { objectiveProgress } from './Tasks';
 import { logFromPlan } from './Health';
-import { addDays, diffDays, parseISO, today } from '../lib/dates';
+import { addDays, diffDays, parseISO, relativeLabel, today } from '../lib/dates';
 import { money } from '../lib/format';
 import type { Page } from '../App';
 
@@ -32,6 +37,30 @@ export default function MyDay({ go }: { go: (p: Page, sub?: string) => void }) {
   const doneIds = new Set(s.completions.filter((c) => c.source === 'task').map((c) => c.sourceId));
   const active = objectives.filter((o) => o.status === 'active').slice(0, 3);
   const todaysWorkouts = items.filter((i) => i.source === 'workout' && i.date <= t);
+  const payday = budget
+    .filter((b) => b.kind === 'income')
+    .map((b) => ({ b, d: nextOccurrence(b.schedule, t) }))
+    .filter((x) => x.d)
+    .sort((a, b) => a.d!.localeCompare(b.d!))[0];
+  const focus = s.tasks.filter((x) => x.focus && (!x.schedule?.start || x.schedule.freq === 'once') && !doneIds.has(x.id));
+  const tg = useTargets();
+  const meals = useRows<MealEntry>('meals');
+  const eaten = sumMacros(meals.filter((m) => m.date === t)).kcal;
+  const doneToday = s.completions.filter((c) => c.completedOn === t).length;
+  const allDone = hasAny && g.overdue.length === 0 && g.today.length === 0 && doneToday > 0;
+  const share = async () => {
+    const lines = [...g.overdue, ...g.today].map((i) => `☐ ${i.title}${i.amount ? ` (${money(i.amount)})` : ''}`);
+    const text = `My day, ${new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}\n${lines.join('\n') || 'Nothing due 🎉'}`;
+    try {
+      if (navigator.share) await navigator.share({ title: 'My day', text });
+      else {
+        await navigator.clipboard.writeText(text);
+        showToast("Today's list copied");
+      }
+    } catch {
+      /* cancelled */
+    }
+  };
   const backupDays = lastBackup ? Math.floor((Date.now() - lastBackup) / 86400000) : undefined;
 
   // week strip: today + 6 days
@@ -96,7 +125,50 @@ export default function MyDay({ go }: { go: (p: Page, sub?: string) => void }) {
               <span>Left this month</span>
               <b className={m.left < 0 ? 'warn' : ''}>{money(m.left, { decimals: false })}</b>
             </button>
+            {payday && (
+              <button className="stat" onClick={() => go('money', 'budget')}>
+                <span>Payday</span>
+                <b>{diffDays(payday.d!, t) === 0 ? 'Today 🎉' : `${diffDays(payday.d!, t)} days`}</b>
+              </button>
+            )}
+            {tg && (
+              <button className="stat" onClick={() => go('health', 'food')}>
+                <span>Calories left</span>
+                <b className={tg.kcal - eaten < 0 ? 'warn' : ''}>{Math.round(tg.kcal - eaten)}</b>
+              </button>
+            )}
           </div>
+          {allDone && (
+            <div className="card celebrate" role="status">
+              🎉 <b>All done for today!</b> You ticked off {doneToday} {doneToday === 1 ? 'thing' : 'things'}.
+            </div>
+          )}
+          {focus.length > 0 && (
+            <>
+              <h2>⭐ Focus</h2>
+              <ul className="agenda">
+                {focus.map((x) => (
+                  <li key={x.id}>
+                    <div className="agenda-row">
+                      <button
+                        className="tick"
+                        aria-label={`Mark ${x.title} done`}
+                        onClick={async () => {
+                          buzz();
+                          const id = await save<Completion>('completions', { source: 'task', sourceId: x.id, date: x.schedule?.freq === 'once' ? x.schedule.start : 'anytime', completedOn: t });
+                          showToast(`Done: ${x.title}`, () => db.completions.update(id, { deleted: 1, updatedAt: Date.now() }));
+                        }}
+                      />
+                      <button className="agenda-body" onClick={() => openEdit({ table: 'tasks', id: x.id })}>
+                        <div className="title">{x.title}</div>
+                        <div className="meta">{[x.area, x.schedule?.start && relativeLabel(x.schedule.start, t)].filter(Boolean).join(' · ')}</div>
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
           {backupDays !== undefined ? (
             backupDays >= 14 && (
               <div className="card nudge">
@@ -139,7 +211,14 @@ export default function MyDay({ go }: { go: (p: Page, sub?: string) => void }) {
               <AgendaList items={g.overdue} onDone={onDone} />
             </>
           )}
-          <h2>Today</h2>
+          <div className="row h2row">
+            <h2 className="grow">Today</h2>
+            {g.today.length + g.overdue.length > 0 && (
+              <button className="small" onClick={share}>
+                Share
+              </button>
+            )}
+          </div>
           <AgendaList items={g.today} emptyText="Nothing due today. 🎉" onDone={onDone} />
           <h2>Next 7 days</h2>
           <AgendaList items={g.week} emptyText="Nothing in the next week." onDone={onDone} />

@@ -3,6 +3,7 @@ import type { WorkoutLog, WorkoutPlan } from '../db';
 import { describeSchedule, nextOccurrence } from '../lib/schedule';
 import { addDays, diffDays, formatDate, parseISO, relativeLabel, toISO, today } from '../lib/dates';
 import { openEdit } from '../registry';
+import { Body, FoodDiary, Foods, MealPlanner } from './Nutrition';
 
 const FEEL = ['', '😫', '😕', '🙂', '😀', '🔥'];
 
@@ -31,10 +32,20 @@ export function logFromPlan(p: WorkoutPlan) {
   openEdit({ table: 'workouts', initial: { name: p.name, planId: p.id, date: today(), entries: p.exercises.map((e) => ({ ...e })) } });
 }
 
-type Tab = 'plans' | 'log' | 'records';
+type Tab = 'plans' | 'log' | 'records' | 'food' | 'meals' | 'foods' | 'body';
+const TABS: [Tab, string][] = [
+  ['food', '🍽 Food diary'],
+  ['meals', '🗓 Meal plan'],
+  ['foods', 'My foods'],
+  ['body', '⚖️ Body'],
+  ['plans', '🏋️ Gym planner'],
+  ['log', 'Workout log'],
+  ['records', 'Personal bests'],
+];
 
 export default function Health({ sub, setSub }: { sub?: string; setSub: (s: string) => void }) {
-  const tab: Tab = sub === 'log' || sub === 'records' ? sub : 'plans';
+  const tab: Tab = (TABS.some(([k]) => k === sub) ? sub : 'food') as Tab;
+  const isGym = tab === 'plans' || tab === 'log' || tab === 'records';
   const plans = useRows<WorkoutPlan>('plans');
   const logs = useRows<WorkoutLog>('workouts');
   const t = today();
@@ -56,6 +67,7 @@ export default function Health({ sub, setSub }: { sub?: string; setSub: (s: stri
   return (
     <div className="page">
       <h1>Health</h1>
+      {isGym && (
       <div className="stats">
         <div className="stat">
           <span>This week</span>
@@ -72,17 +84,18 @@ export default function Health({ sub, setSub }: { sub?: string; setSub: (s: stri
           </b>
         </div>
       </div>
-      <div className="tabs">
-        <button className={tab === 'plans' ? 'on' : ''} onClick={() => setSub('plans')}>
-          Gym planner
-        </button>
-        <button className={tab === 'log' ? 'on' : ''} onClick={() => setSub('log')}>
-          Workout log
-        </button>
-        <button className={tab === 'records' ? 'on' : ''} onClick={() => setSub('records')}>
-          Personal bests
-        </button>
+      )}
+      <div className="tabs scroll">
+        {TABS.map(([k, label]) => (
+          <button key={k} className={tab === k ? 'on' : ''} onClick={() => setSub(k)}>
+            {label}
+          </button>
+        ))}
       </div>
+      {tab === 'food' && <FoodDiary />}
+      {tab === 'meals' && <MealPlanner />}
+      {tab === 'foods' && <Foods />}
+      {tab === 'body' && <Body />}
       {tab === 'plans' && (
         <CrudList<WorkoutPlan>
           table="plans"

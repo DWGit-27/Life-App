@@ -58,3 +58,12 @@ export function relativeLabel(s: ISODate, ref: ISODate = today()): string {
   if (n < 7) return `In ${n} days`;
   return formatDate(s);
 }
+
+/** "today", "yesterday", "5 days ago" for past dates. */
+export function agoLabel(s: ISODate, ref: ISODate = today()): string {
+  const n = diffDays(ref, s);
+  if (n <= 0) return 'today';
+  if (n === 1) return 'yesterday';
+  if (n < 60) return `${n} days ago`;
+  return `on ${formatDate(s)}`;
+}

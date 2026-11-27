@@ -1,13 +1,67 @@
 import { useMemo, useState } from 'react';
+import { useLiveQuery } from 'dexie-react-hooks';
 import { AgendaList, groupAgenda, useSources, useUndo } from '../components/Agenda';
 import { CrudList, useRows } from '../components/Crud';
 import { AREAS, save, type Area, type Objective, type Task } from '../db';
 import { buildAgenda } from '../agenda';
 import { describeSchedule } from '../lib/schedule';
-import { diffDays, formatDate, relativeLabel, today } from '../lib/dates';
+import { agoLabel, diffDays, formatDate, relativeLabel, today } from '../lib/dates';
 import { openEdit } from '../registry';
+import { parseQuickAdd } from '../lib/quickadd';
+import { showToast } from '../toast';
+import { db, type Completion } from '../db';
+import { useRows as useRows2 } from '../components/Crud';
 
-type Tab = 'due' | 'mine' | 'objectives';
+function QuickPreview({ text }: { text: string }) {
+  const q = parseQuickAdd(text, today());
+  const bits = [q.anytime ? 'Anytime' : q.date ? relativeLabel(q.date) : 'Today', q.area, q.priority === 'high' && 'High priority', q.priority === 'low' && 'Low priority', q.focus && '⭐ Focus'].filter(Boolean);
+  return (
+    <p className="muted small-text quick-preview">
+      → <b>{q.title || '…'}</b> · {bits.join(' · ')}
+    </p>
+  );
+}
+
+const SOURCE_LABEL: Record<string, string> = { task: 'Task', bill: 'Bill', policy: 'Insurance', house: 'House', loan: 'Loan', workout: 'Workout', warranty: 'Warranty', investment: 'Investment' };
+
+/** Recently completed items, newest first, with undo. */
+function Done() {
+  const completions = useRows2<Completion>('completions');
+  const tasks = useRows2<Task>('tasks');
+  const names = useLiveQuery(async () => {
+    const m = new Map<string, string>();
+    for (const b of await db.bills.toArray()) m.set(b.id, `Pay ${b.name}`);
+    for (const p of await db.policies.toArray()) m.set(p.id, `Renew ${p.name}`);
+    for (const h of await db.house.toArray()) m.set(h.id, h.title);
+    for (const l of await db.loans.toArray()) m.set(l.id, `${l.name} payment`);
+    for (const p of await db.plans.toArray()) m.set(p.id, `Workout: ${p.name}`);
+    for (const i of await db.inventory.toArray()) m.set(i.id, `Warranty: ${i.name}`);
+    return m;
+  }, []);
+  for (const t of tasks) names?.set(t.id, t.title);
+  const recent = [...completions].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 50);
+  if (!recent.length) return <div className="empty">Things you tick off show up here, so you can undo them.</div>;
+  return (
+    <ul className="cards">
+      {recent.map((c) => (
+        <li key={c.id} className="card">
+          <div className="row">
+            <div className="grow">
+              <b>✓ {names?.get(c.sourceId.split(':')[0]) ?? 'Item'}</b>
+              <div className="meta">
+                {SOURCE_LABEL[c.source]} · done {agoLabel(c.completedOn)}
+                {c.date !== 'anytime' && c.date !== c.completedOn && ` · was due ${formatDate(c.date)}`}
+              </div>
+            </div>
+            <button onClick={() => db.completions.update(c.id, { deleted: 1, updatedAt: Date.now() })}>Undo</button>
+          </div>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+type Tab = 'due' | 'mine' | 'objectives' | 'done';
 
 export function objectiveProgress(o: Objective, tasks: Task[], doneIds: Set<string>) {
   const linked = tasks.filter((t) => t.objectiveId === o.id);
@@ -16,7 +70,7 @@ export function objectiveProgress(o: Objective, tasks: Task[], doneIds: Set<stri
 }
 
 export default function Tasks({ sub, setSub }: { sub?: string; setSub: (s: string) => void }) {
-  const tab: Tab = sub === 'mine' || sub === 'objectives' ? sub : 'due';
+  const tab: Tab = sub === 'mine' || sub === 'objectives' || sub === 'done' ? sub : 'due';
   const s = useSources();
   const objectives = useRows<Objective>('objectives');
   const [horizon, setHorizon] = useState(14);
@@ -39,13 +93,23 @@ export default function Tasks({ sub, setSub }: { sub?: string; setSub: (s: strin
         onSubmit={async (e) => {
           e.preventDefault();
           if (!quick.trim()) return;
-          await save<Task>('tasks', { title: quick.trim(), area: (area || 'Personal') as Area, schedule: { freq: 'once', interval: 1, start: t } });
+          const q = parseQuickAdd(quick, t);
+          if (!q.title) return;
+          await save<Task>('tasks', {
+            title: q.title,
+            area: (q.area || area || 'Personal') as Area,
+            priority: q.priority ?? 'normal',
+            focus: q.focus,
+            schedule: q.anytime ? undefined : { freq: 'once', interval: 1, start: q.date ?? t },
+          });
+          showToast(`Added "${q.title}"${q.anytime ? ' (anytime)' : q.date && q.date !== t ? ` for ${relativeLabel(q.date, t).toLowerCase()}` : ' for today'}`);
           setQuick('');
         }}
       >
-        <input value={quick} onChange={(e) => setQuick(e.target.value)} placeholder="Quick add a task for today…" />
+        <input id="quick-add" value={quick} onChange={(e) => setQuick(e.target.value)} placeholder="Quick add… e.g. Call plumber tomorrow !high #home" />
         <button className="primary">Add</button>
       </form>
+      {quick && <QuickPreview text={quick} />}
       <div className="tabs">
         <button className={tab === 'due' ? 'on' : ''} onClick={() => setSub('due')}>
           Everything due
@@ -56,8 +120,11 @@ export default function Tasks({ sub, setSub }: { sub?: string; setSub: (s: strin
         <button className={tab === 'objectives' ? 'on' : ''} onClick={() => setSub('objectives')}>
           Objectives
         </button>
+        <button className={tab === 'done' ? 'on' : ''} onClick={() => setSub('done')}>
+          Done
+        </button>
         <span className="grow" />
-        {tab !== 'objectives' && (
+        {(tab === 'due' || tab === 'mine') && (
           <select value={area} onChange={(e) => setArea(e.target.value as Area | '')} aria-label="Filter by area">
             <option value="">All areas</option>
             {AREAS.map((a) => (
@@ -125,6 +192,7 @@ export default function Tasks({ sub, setSub }: { sub?: string; setSub: (s: strin
           )}
         />
       )}
+      {tab === 'done' && <Done />}
       {tab === 'objectives' && <Objectives objectives={objectives} tasks={s.tasks} doneIds={doneIds} />}
       {toast}
     </div>

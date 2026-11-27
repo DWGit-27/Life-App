@@ -1,7 +1,7 @@
 import { CrudList, useRows } from '../components/Crud';
 import type { Bill } from '../db';
 import { describeSchedule, nextOccurrence, perYear } from '../lib/schedule';
-import { relativeLabel, today } from '../lib/dates';
+import { formatDate, relativeLabel, today } from '../lib/dates';
 import { money } from '../lib/format';
 
 
@@ -35,6 +35,7 @@ export default function Bills() {
         empty="No bills yet. Add rent or mortgage, council tax, energy, water, phone and so on."
         renderRow={(b) => {
           const next = nextOccurrence(b.schedule, t);
+          const prev = b.history?.[b.history.length - 1];
           return (
             <div className="row">
               <div className="grow">
@@ -44,8 +45,16 @@ export default function Bills() {
                   {[b.provider, describeSchedule(b.schedule), next && `next ${relativeLabel(next, t).toLowerCase()}`].filter(Boolean).join(' · ')}
                 </div>
                 {b.contractEnd && b.contractEnd >= t && <div className="meta">Deal ends {relativeLabel(b.contractEnd, t).toLowerCase()}</div>}
+                {prev && (
+                  <div className={`meta ${b.amount > prev.amount ? 'warn' : 'good'}`}>
+                    {b.amount > prev.amount ? '▲' : '▼'} was {money(prev.amount)} until {formatDate(prev.date)}
+                  </div>
+                )}
               </div>
-              <div className="amount">{money(b.amount)}</div>
+              <div className="amount-stack">
+                <div className="amount">{money(b.amount)}</div>
+                {b.schedule.freq !== 'yearly' && <div className="meta">{money(b.amount * perYear(b.schedule), { decimals: false })}/yr</div>}
+              </div>
             </div>
           );
         }}

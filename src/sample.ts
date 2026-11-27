@@ -1,4 +1,4 @@
-import { save, uid, type Bill, type BudgetLine, type HouseJob, type InventoryItem, type Investment, type Loan, type Objective, type Policy, type Task, type Txn, type WorkoutLog, type WorkoutPlan } from './db';
+import { db, save, uid, type Food, type MealEntry, type MealPlan, type Weight, type Bill, type BudgetLine, type HouseJob, type InventoryItem, type Investment, type Loan, type Objective, type Policy, type Task, type Txn, type WorkoutLog, type WorkoutPlan } from './db';
 import { addDays, addMonths, today } from './lib/dates';
 
 /** Example data so the app can be tried out. All marked with notes "example". */
@@ -78,4 +78,31 @@ export async function loadSample() {
     { name: '5k run', date: addDays(t, -14), minutes: 29, feeling: 5, entries: [] },
   ];
   for (const l of logs) await save<WorkoutLog>('workouts', { ...(l as WorkoutLog), notes: 'example' });
+
+  // nutrition
+  const foods: Partial<Food>[] = [
+    { name: 'Porridge with banana', serving: '1 bowl', kcal: 350, protein: 11, carbs: 62, fat: 7, favourite: true, ingredients: 'Oats\nMilk\nBananas' },
+    { name: 'Chicken salad wrap', serving: '1 wrap', kcal: 480, protein: 35, carbs: 42, fat: 18, favourite: true, ingredients: 'Tortilla wraps\nChicken breast\nSalad leaves' },
+    { name: 'Spaghetti bolognese', serving: '1 plate', kcal: 650, protein: 38, carbs: 78, fat: 20, ingredients: 'Spaghetti\nBeef mince\nChopped tomatoes\nOnion\nGarlic' },
+    { name: 'Salmon, rice & greens', serving: '1 plate', kcal: 620, protein: 40, carbs: 60, fat: 22, ingredients: 'Salmon fillets\nRice\nBroccoli' },
+    { name: 'Greek yoghurt & berries', serving: '1 pot', kcal: 180, protein: 15, carbs: 18, fat: 5, favourite: true, ingredients: 'Greek yoghurt\nBerries' },
+    { name: 'Coffee with milk', serving: '1 mug', kcal: 40, protein: 2, carbs: 4, fat: 2, favourite: true },
+  ];
+  const foodIds: string[] = [];
+  for (const f of foods) foodIds.push(await save<Food>('foods', { ...(f as Food) }));
+  const [porridge, wrap, bolognese, salmon, yoghurt] = foods as Food[];
+  const log: [MealEntry['slot'], Food, number][] = [['Breakfast', porridge, 1], ['Lunch', wrap, 1], ['Snacks', yoghurt, 1]];
+  for (const [slot, f, n] of log) await save<MealEntry>('meals', { date: t, slot, name: f.name, servings: n, kcal: f.kcal, protein: f.protein, carbs: f.carbs, fat: f.fat });
+  const ws = addDays(t, -((new Date(t + 'T00:00').getDay() + 6) % 7));
+  const dinners = [bolognese, salmon, bolognese, salmon, wrap, salmon, bolognese];
+  for (let i = 0; i < 7; i++) {
+    const f = dinners[i];
+    await save<MealPlan>('mealplans', { date: addDays(ws, i), slot: 'Dinner', name: f.name, kcal: f.kcal, protein: f.protein, carbs: f.carbs, fat: f.fat, ingredients: f.ingredients });
+    await save<MealPlan>('mealplans', { date: addDays(ws, i), slot: 'Breakfast', name: porridge.name, kcal: porridge.kcal, protein: porridge.protein, carbs: porridge.carbs, fat: porridge.fat, ingredients: porridge.ingredients });
+  }
+  const kg = [82.4, 82.1, 82.3, 81.8, 81.6, 81.7, 81.2, 81.0];
+  for (let i = 0; i < kg.length; i++) await save<Weight>('weights', { date: addDays(t, -7 * (kg.length - 1 - i)), kg: kg[i] });
+  if (!(await db.settings.get('nutrition'))) await db.settings.put({ key: 'nutrition', value: { kcal: 2200, protein: 160, carbs: 230, fat: 70 } });
+  // a focus task
+  await save<Task>('tasks', { title: 'Book boiler service', area: 'Home', focus: true, priority: 'high', notes: 'example' });
 }

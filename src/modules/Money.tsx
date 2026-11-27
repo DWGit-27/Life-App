@@ -242,6 +242,16 @@ function Budget() {
   );
 }
 
+function exportCsv(rows: Txn[], month: string) {
+  const esc = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const lines = ['Date,Type,Category,Amount,Note', ...[...rows].sort((a, b) => a.date.localeCompare(b.date)).map((x) => [x.date, x.kind, x.category, x.amount.toFixed(2), x.note].map(esc).join(','))];
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([lines.join('\n')], { type: 'text/csv' }));
+  a.download = `spending-${month}.csv`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
 function Spending() {
   const budget = useRows<BudgetLine>('budget');
   const txns = useRows<Txn>('txns');
@@ -262,6 +272,10 @@ function Spending() {
     byCat.set(b.category || 'Other', c);
   }
   const months = [...new Set([monthKey(t), ...txns.map((x) => monthKey(x.date))])].sort().reverse();
+  // most-used categories first, so logging is one tap
+  const freq = new Map<string, number>();
+  for (const x of txns) if (x.category) freq.set(x.category, (freq.get(x.category) ?? 0) + 1);
+  const quickCats = [...new Set([...[...freq.entries()].sort((a, b) => b[1] - a[1]).map(([c]) => c), 'Groceries', 'Eating out', 'Fuel', 'Shopping'])].slice(0, 6);
   return (
     <>
       <div className="toolbar">
@@ -300,6 +314,18 @@ function Spending() {
             })}
         </ul>
       )}
+      <div className="chips quick-cats">
+        {quickCats.map((c) => (
+          <button key={c} className="chip" onClick={() => openEdit({ table: 'txns', initial: { date: month === monthKey(t) ? t : `${month}-01`, kind: 'expense', category: c } })}>
+            + {c}
+          </button>
+        ))}
+        {monthTx.length > 0 && (
+          <button className="chip" onClick={() => exportCsv(monthTx, month)}>
+            ⬇ CSV
+          </button>
+        )}
+      </div>
       <CrudList<Txn>
         table="txns"
         rows={monthTx}
