@@ -7,6 +7,7 @@ import { EditorModal, type FieldSpec } from './components/Form';
 import { addDays, today } from './lib/dates';
 import { money } from './lib/format';
 import { monthlyPayment } from './lib/mortgage';
+import { newPBs, pace } from './lib/fitness';
 
 /* ---------- option lists ---------- */
 export const BILL_CATEGORIES = ['Housing', 'Council tax', 'Energy', 'Water', 'Phone & internet', 'TV & streaming', 'Insurance', 'Transport', 'Subscriptions', 'Childcare', 'Other'];
@@ -141,8 +142,10 @@ export const FIELDS: Partial<Record<DataTable, FieldSpec[]>> = {
   workouts: [
     { key: 'name', label: 'Workout', type: 'text', required: true },
     { key: 'date', label: 'Date', type: 'date', required: true },
-    { key: 'minutes', label: 'Duration (minutes)', type: 'number' },
-    { key: 'entries', label: 'What you did', type: 'exercises' },
+    { key: 'kind', label: 'Type', type: 'select', options: [{ value: 'strength', label: 'Strength / gym' }, { value: 'cardio', label: 'Cardio (run, cycle, swim…)' }, { value: 'other', label: 'Other (sport, yoga, class…)' }] },
+    { key: 'minutes', label: 'Duration (minutes)', type: 'number', half: true },
+    { key: 'distanceKm', label: 'Distance (km)', type: 'number', half: true, when: (v) => v.kind === 'cardio', extra: (v) => (v.minutes && v.distanceKm ? <small className="muted">Pace {pace(v.minutes, v.distanceKm)}</small> : null) },
+    { key: 'entries', label: 'What you did', type: 'exercises', when: (v) => v.kind !== 'cardio' },
     { key: 'feeling', label: 'How did it feel?', type: 'select', options: [{ value: '1', label: '😫 Rough' }, { value: '2', label: '😕 Hard' }, { value: '3', label: '🙂 OK' }, { value: '4', label: '😀 Good' }, { value: '5', label: '🔥 Great' }] },
     { key: 'notes', label: 'Notes', type: 'textarea' },
   ],
@@ -181,7 +184,9 @@ export const FIELDS: Partial<Record<DataTable, FieldSpec[]>> = {
   ],
   weights: [
     { key: 'date', label: 'Date', type: 'date', required: true },
-    { key: 'kg', label: 'Weight (kg)', type: 'number', required: true },
+    { key: 'kg', label: 'Weight (kg)', type: 'number', required: true, half: true },
+    { key: 'waistCm', label: 'Waist (cm)', type: 'number', half: true },
+    { key: 'bodyFat', label: 'Body fat %', type: 'number', half: true },
     { key: 'notes', label: 'Notes', type: 'text' },
   ],
 };
@@ -327,7 +332,9 @@ export function GlobalEditor() {
           out.history = [...(rec.history ?? []), { date: today(), amount: rec.amount }];
         }
         if (req.table === 'workouts' && out.feeling) out.feeling = Number(out.feeling);
+        const pbs = req.table === 'workouts' && !rec ? newPBs(out as any, (await db.workouts.toArray()).filter((w) => !w.deleted)) : [];
         await save(req.table, out as any);
+        if (pbs.length) showToast(`🏆 New personal best: ${pbs.join(', ')}!`);
         // Logging a planned workout ticks off that plan's session in the agenda.
         if (req.table === 'workouts' && !rec && out.planId) {
           const plan = await db.plans.get(out.planId);

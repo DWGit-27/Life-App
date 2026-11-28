@@ -1,13 +1,13 @@
 import { useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { CrudList, useRows } from '../components/Crud';
-import { db, MEAL_SLOTS, save, type Food, type MealEntry, type MealPlan, type MealSlot, type Weight } from '../db';
+import { db, MEAL_SLOTS, save, type Food, type MealPlan, type MealSlot, type Weight } from '../db';
 import { addDays, formatDate, parseISO, toISO, today } from '../lib/dates';
 import { ACTIVITY, shoppingList, sumMacros, targets, type Profile, type Targets } from '../lib/nutrition';
-import { openEdit, slotNow } from '../registry';
-import { showToast, buzz } from '../toast';
+import { openEdit } from '../registry';
+import { showToast } from '../toast';
 
-const SLOT_ICON: Record<MealSlot, string> = { Breakfast: '🥣', Lunch: '🥪', Dinner: '🍝', Snacks: '🍎' };
+export const SLOT_ICON: Record<MealSlot, string> = { Breakfast: '🥣', Lunch: '🥪', Dinner: '🍝', Snacks: '🍎' };
 
 export function useTargets(): Targets | undefined {
   return useLiveQuery(() => db.settings.get('nutrition'), [])?.value as Targets | undefined;
@@ -19,9 +19,9 @@ function weekStart(d: string) {
   return toISO(x);
 }
 
-const dayLabel = (d: string, opts: Intl.DateTimeFormatOptions = { weekday: 'long', day: 'numeric', month: 'short' }) => parseISO(d).toLocaleDateString('en-GB', opts);
+export const dayLabel = (d: string, opts: Intl.DateTimeFormatOptions = { weekday: 'long', day: 'numeric', month: 'short' }) => parseISO(d).toLocaleDateString('en-GB', opts);
 
-function MacroBar({ label, value, target, unit = 'g' }: { label: string; value: number; target?: number; unit?: string }) {
+export function MacroBar({ label, value, target, unit = 'g' }: { label: string; value: number; target?: number; unit?: string }) {
   const pct = target ? Math.min(100, (value / target) * 100) : 0;
   const over = !!target && value > target * 1.05;
   return (
@@ -37,140 +37,6 @@ function MacroBar({ label, value, target, unit = 'g' }: { label: string; value: 
         <i style={{ width: `${pct}%` }} className={over ? 'over' : ''} />
       </div>
     </div>
-  );
-}
-
-/* ---------------- Food diary ---------------- */
-export function FoodDiary() {
-  const t = today();
-  const [date, setDate] = useState(t);
-  const meals = useRows<MealEntry>('meals');
-  const foods = useRows<Food>('foods');
-  const plans = useRows<MealPlan>('mealplans');
-  const tg = useTargets();
-  const day = meals.filter((m) => m.date === date);
-  const tot = sumMacros(day);
-  const left = tg ? tg.kcal - tot.kcal : undefined;
-  const favs = foods.filter((f) => f.favourite).slice(0, 8);
-  const planned = plans.filter((p) => p.date === date && !day.some((m) => m.name === p.name && m.slot === p.slot));
-  const copyFrom = async (from: string) => {
-    const src = meals.filter((m) => m.date === from);
-    if (!src.length) return showToast('Nothing logged that day');
-    const ids: string[] = [];
-    for (const m of src) {
-      const { id: _i, createdAt: _c, updatedAt: _u, ...rest } = m;
-      ids.push(await save<MealEntry>('meals', { ...rest, date }));
-    }
-    showToast(`Copied ${src.length} entries`, async () => {
-      for (const id of ids) await db.meals.update(id, { deleted: 1, updatedAt: Date.now() });
-    });
-  };
-  const logFood = async (f: Food, slot: MealSlot) => {
-    buzz();
-    const id = await save<MealEntry>('meals', { date, slot, name: f.name, servings: 1, kcal: f.kcal, protein: f.protein, carbs: f.carbs, fat: f.fat, foodId: f.id });
-    showToast(`Logged ${f.name}`, () => db.meals.update(id, { deleted: 1, updatedAt: Date.now() }));
-  };
-
-  return (
-    <>
-      <div className="date-nav">
-        <button aria-label="Previous day" onClick={() => setDate(addDays(date, -1))}>
-          ‹
-        </button>
-        <b className="grow">{date === t ? 'Today' : dayLabel(date)}</b>
-        {date !== t && (
-          <button className="link" onClick={() => setDate(t)}>
-            Today
-          </button>
-        )}
-        <button aria-label="Next day" onClick={() => setDate(addDays(date, 1))}>
-          ›
-        </button>
-      </div>
-      <section className="card kcal-card">
-        <div className="kcal-head">
-          <div>
-            <span className="muted">Eaten</span>
-            <b>{Math.round(tot.kcal)}</b>
-          </div>
-          <div>
-            <span className="muted">Target</span>
-            <b>{tg?.kcal ?? '—'}</b>
-          </div>
-          <div>
-            <span className="muted">{left !== undefined && left < 0 ? 'Over' : 'Left'}</span>
-            <b className={left !== undefined && left < 0 ? 'warn' : 'good'}>{left !== undefined ? Math.abs(Math.round(left)) : '—'}</b>
-          </div>
-        </div>
-        <MacroBar label="Calories" value={tot.kcal} target={tg?.kcal} unit="kcal" />
-        <div className="macros3">
-          <MacroBar label="Protein" value={tot.protein} target={tg?.protein} />
-          <MacroBar label="Carbs" value={tot.carbs} target={tg?.carbs} />
-          <MacroBar label="Fat" value={tot.fat} target={tg?.fat} />
-        </div>
-        {!tg && <p className="muted">Set your daily target in the Body tab.</p>}
-      </section>
-      {planned.length > 0 && (
-        <div className="card nudge">
-          🗓 Planned for this day: {planned.map((p) => p.name).join(', ')}.{' '}
-          <button
-            className="link"
-            onClick={async () => {
-              for (const p of planned) await save<MealEntry>('meals', { date, slot: p.slot, name: p.name, servings: 1, kcal: p.kcal || 0, protein: p.protein, carbs: p.carbs, fat: p.fat, foodId: p.foodId });
-              showToast(`Logged ${planned.length} planned meals`);
-            }}
-          >
-            Log them
-          </button>
-        </div>
-      )}
-      {favs.length > 0 && (
-        <>
-          <h3>Quick add to {slotNow()}</h3>
-          <div className="chips">
-            {favs.map((f) => (
-              <button key={f.id} className="chip" onClick={() => logFood(f, date === t ? (slotNow() as MealSlot) : 'Snacks')}>
-                + {f.name} <span className="muted">{f.kcal}</span>
-              </button>
-            ))}
-          </div>
-        </>
-      )}
-      {MEAL_SLOTS.map((slot) => {
-        const list = day.filter((m) => m.slot === slot);
-        const k = sumMacros(list).kcal;
-        return (
-          <section key={slot} className="slot">
-            <div className="row">
-              <h3 className="grow">
-                {SLOT_ICON[slot]} {slot}
-              </h3>
-              <span className="muted">{k ? `${Math.round(k)} kcal` : ''}</span>
-              <button className="small" onClick={() => openEdit({ table: 'meals', initial: { date, slot, servings: 1 } })}>
-                + Add
-              </button>
-            </div>
-            {list.length > 0 && (
-              <ul className="mini">
-                {list.map((m) => (
-                  <li key={m.id} className="clickable" onClick={() => openEdit({ table: 'meals', id: m.id })}>
-                    <span className="grow">
-                      {m.name}
-                      {m.servings !== 1 && <span className="muted"> ×{m.servings}</span>}
-                    </span>
-                    <span className="muted">{m.protein ? `${Math.round(m.protein * m.servings)}g P` : ''}</span>
-                    <span className="amount">{Math.round(m.kcal * m.servings)}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
-        );
-      })}
-      <div className="row wrap">
-        <button onClick={() => copyFrom(addDays(date, -1))}>Copy the day before</button>
-      </div>
-    </>
   );
 }
 

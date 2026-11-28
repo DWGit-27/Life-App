@@ -12,7 +12,7 @@ It is an installable web app (PWA). Open it in Chrome on Android or desktop and 
 | Tasks & objectives | One-off, recurring and anytime tasks with steps; objectives with progress | Task due dates |
 | Money | Overview (net worth, monthly plan, next 30 days going out), Bills, Insurance, Loans, Investments, Budget, Spending | Bill payments, renewal heads-ups, loan payments, remortgage reminder |
 | House | Cleaning rota, maintenance, inventory (serials, receipts, warranties) | Chores, warranty-ending heads-ups |
-| Health | Food diary (calories & macros), meal planner with shopping list, saved foods, body weight & calorie target; gym planner, workout log, streaks, personal bests | Planned workouts |
+| Health | Home with two big buttons. **Workouts**: live workout mode (tick sets, rest timer, last-session hints), ready-made programmes, exercise library, cardio with distance & pace, weekly goal ring, 12-week heatmap, progress charts (e1RM, volume), personal records by muscle. **Food**: food picker with ~55 common UK foods, water tracking, macro donut, logging streak, copy yesterday, trends & weekly report, meal planner with shopping list, body weight, waist & body fat | Planned workouts |
 
 Tap anything in a list to edit it. ⏰ moves an item to another day. 🔍 (or `/`) searches everything. Press `?` for keyboard shortcuts. Quick add understands `tomorrow`, `fri`, `in 3 days`, `25/12`, `!high`, `#work`, `*` (focus) and `someday`.
 
