@@ -1,4 +1,4 @@
-import { db, save, uid, type Food, type MealEntry, type MealPlan, type Weight, type Bill, type BudgetLine, type HouseJob, type InventoryItem, type Investment, type Loan, type Objective, type Policy, type Task, type Txn, type WorkoutLog, type WorkoutPlan } from './db';
+import { db, save, uid, type Food, type MealEntry, type MealPlan, type Weight, type Water, type Bill, type BudgetLine, type HouseJob, type InventoryItem, type Investment, type Loan, type Objective, type Policy, type Task, type Txn, type WorkoutLog, type WorkoutPlan } from './db';
 import { addDays, addMonths, today } from './lib/dates';
 
 /** Example data so the app can be tried out. All marked with notes "example". */
@@ -105,4 +105,30 @@ export async function loadSample() {
   if (!(await db.settings.get('nutrition'))) await db.settings.put({ key: 'nutrition', value: { kcal: 2200, protein: 160, carbs: 230, fat: 70 } });
   // a focus task
   await save<Task>('tasks', { title: 'Book boiler service', area: 'Home', focus: true, priority: 'high', notes: 'example' });
+
+  // six weeks of progressing workouts for the charts
+  for (let w = 6; w >= 1; w--) {
+    const d1 = addDays(t, -7 * w - 1);
+    const d2 = addDays(t, -7 * w + 2);
+    const bump = (6 - w) * 2.5;
+    await save<WorkoutLog>('workouts', { name: 'Upper body', planId: push, date: d1, minutes: 50 + w, feeling: 3 + (w % 2), kind: 'strength', entries: [
+      { name: 'Bench press', sets: 3, reps: '8', weight: 50 + bump, setsDone: [8, 8, 7].map((r) => ({ reps: r, weight: 50 + bump, done: true })) },
+      { name: 'Pull-ups', sets: 3, reps: '8', setsDone: [8, 7, 6].map((r) => ({ reps: r, done: true })) },
+      { name: 'Shoulder press', sets: 3, reps: '10', weight: 22.5 + bump / 2 },
+    ] });
+    if (w % 3 !== 0) await save<WorkoutLog>('workouts', { name: 'Legs', date: d2, minutes: 45, kind: 'strength', entries: [
+      { name: 'Squat', sets: 4, reps: '6', weight: 65 + bump * 1.5 },
+      { name: 'Romanian deadlift', sets: 3, reps: '10', weight: 50 + bump },
+    ] });
+    await save<WorkoutLog>('workouts', { name: '5k run', date: addDays(t, -7 * w + 4), minutes: 31 - (6 - w) * 0.5, distanceKm: 5, kind: 'cardio', entries: [] });
+  }
+  // a week of food diary and water for the trends
+  const days: [Food, Food, Food][] = [[porridge, wrap, bolognese], [porridge, wrap, salmon], [porridge, yoghurt, bolognese], [porridge, wrap, salmon], [porridge, wrap, bolognese], [porridge, yoghurt, salmon]];
+  for (let i = 0; i < days.length; i++) {
+    const d = addDays(t, -(i + 1));
+    const [b, l, dn] = days[i];
+    for (const [slot, f] of [['Breakfast', b], ['Lunch', l], ['Dinner', dn]] as [MealEntry['slot'], Food][]) await save<MealEntry>('meals', { date: d, slot, name: f.name, servings: 1, kcal: f.kcal, protein: f.protein, carbs: f.carbs, fat: f.fat });
+    await save<Water>('water', { date: d, ml: 1250 + (i % 3) * 500 });
+  }
+  await save<Water>('water', { date: t, ml: 750 });
 }

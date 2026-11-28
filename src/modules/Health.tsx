@@ -1,179 +1,172 @@
-import { CrudList, useRows } from '../components/Crud';
-import type { WorkoutLog, WorkoutPlan } from '../db';
-import { describeSchedule, nextOccurrence } from '../lib/schedule';
-import { addDays, diffDays, formatDate, parseISO, relativeLabel, toISO, today } from '../lib/dates';
+import { useRows } from '../components/Crud';
+import type { MealEntry, Water, WorkoutLog, WorkoutPlan } from '../db';
+import { agoLabel, relativeLabel, today } from '../lib/dates';
+import { sumMacros } from '../lib/nutrition';
+import { nextOccurrence } from '../lib/schedule';
+import { weekStart } from '../lib/fitness';
 import { openEdit } from '../registry';
-import { Body, FoodDiary, Foods, MealPlanner } from './Nutrition';
+import { Body, Foods, MealPlanner, useTargets } from './Nutrition';
+import { addWater, FoodToday, FoodTrends, loggingStreak, useGoals } from './health/Food';
+import { quickLog, weekStreak, WorkoutLogList, WorkoutPlans, WorkoutProgress, WorkoutRecords, WorkoutWeek } from './health/Workouts';
+import { startWorkout, useLive } from './health/LiveWorkout';
 
-const FEEL = ['', '😫', '😕', '🙂', '😀', '🔥'];
+export { weekStreak };
+export const logFromPlan = quickLog;
 
-/** Monday of the week containing d. */
-function weekStart(d: string) {
-  const x = parseISO(d);
-  const dow = (x.getDay() + 6) % 7;
-  x.setDate(x.getDate() - dow);
-  return toISO(x);
+type Section = 'workouts' | 'food';
+const TABS: Record<Section, [string, string][]> = {
+  workouts: [
+    ['week', 'This week'],
+    ['plans', 'Plans'],
+    ['log', 'Log'],
+    ['progress', 'Progress'],
+    ['records', 'Records'],
+  ],
+  food: [
+    ['today', 'Diary'],
+    ['plan', 'Meal plan'],
+    ['foods', 'My foods'],
+    ['trends', 'Trends'],
+    ['body', 'Body & targets'],
+  ],
+};
+// Links from before the split (#/health/food, #/health/plans …)
+const LEGACY: Record<string, [Section, string]> = {
+  food: ['food', 'today'],
+  meals: ['food', 'plan'],
+  foods: ['food', 'foods'],
+  body: ['food', 'body'],
+  plans: ['workouts', 'plans'],
+  log: ['workouts', 'log'],
+  records: ['workouts', 'records'],
+};
+
+function parse(sub?: string): [Section | null, string] {
+  const [a, b] = (sub ?? '').split('/');
+  if (a === 'workouts' || a === 'food') return [a, TABS[a].some(([k]) => k === b) ? b : TABS[a][0][0]];
+  if (LEGACY[a]) return LEGACY[a];
+  return [null, ''];
 }
-
-/** Consecutive weeks (ending this week or last) with at least one workout. */
-export function weekStreak(logs: WorkoutLog[], t: string) {
-  const weeks = new Set(logs.map((l) => weekStart(l.date)));
-  let w = weekStart(t);
-  if (!weeks.has(w)) w = addDays(w, -7);
-  let n = 0;
-  while (weeks.has(w)) {
-    n++;
-    w = addDays(w, -7);
-  }
-  return n;
-}
-
-export function logFromPlan(p: WorkoutPlan) {
-  openEdit({ table: 'workouts', initial: { name: p.name, planId: p.id, date: today(), entries: p.exercises.map((e) => ({ ...e })) } });
-}
-
-type Tab = 'plans' | 'log' | 'records' | 'food' | 'meals' | 'foods' | 'body';
-const TABS: [Tab, string][] = [
-  ['food', '🍽 Food diary'],
-  ['meals', '🗓 Meal plan'],
-  ['foods', 'My foods'],
-  ['body', '⚖️ Body'],
-  ['plans', '🏋️ Gym planner'],
-  ['log', 'Workout log'],
-  ['records', 'Personal bests'],
-];
 
 export default function Health({ sub, setSub }: { sub?: string; setSub: (s: string) => void }) {
-  const tab: Tab = (TABS.some(([k]) => k === sub) ? sub : 'food') as Tab;
-  const isGym = tab === 'plans' || tab === 'log' || tab === 'records';
-  const plans = useRows<WorkoutPlan>('plans');
-  const logs = useRows<WorkoutLog>('workouts');
-  const t = today();
-  const thisWeek = logs.filter((l) => l.date >= weekStart(t)).length;
-  const last30 = logs.filter((l) => diffDays(t, l.date) < 30);
-  const minutes30 = last30.reduce((a, l) => a + (l.minutes || 0), 0);
-  const streak = weekStreak(logs, t);
-
-  // personal bests: heaviest weight per exercise
-  const pbs = new Map<string, { weight: number; date: string; reps?: string }>();
-  for (const l of logs)
-    for (const e of l.entries ?? [])
-      if (e.name && e.weight) {
-        const k = e.name.trim().toLowerCase();
-        const cur = pbs.get(k);
-        if (!cur || e.weight > cur.weight) pbs.set(k, { weight: e.weight, date: l.date, reps: e.reps });
-      }
-
+  const [section, tab] = parse(sub);
+  if (!section) return <HealthHome open={(s, t) => setSub(t ? `${s}/${t}` : s)} />;
   return (
     <div className="page">
-      <h1>Health</h1>
-      {isGym && (
-      <div className="stats">
-        <div className="stat">
-          <span>This week</span>
-          <b>{thisWeek} workouts</b>
-        </div>
-        <div className="stat">
-          <span>Weekly streak</span>
-          <b className={streak ? 'good' : ''}>{streak ? `🔥 ${streak} wk` : '—'}</b>
-        </div>
-        <div className="stat">
-          <span>Last 30 days</span>
-          <b>
-            {last30.length} · {Math.round(minutes30 / 60)}h
-          </b>
-        </div>
-      </div>
-      )}
+      <button className="link back" onClick={() => setSub('home')}>
+        ‹ Health
+      </button>
+      <h1>{section === 'workouts' ? '🏋️ Workouts' : '🍽 Food'}</h1>
       <div className="tabs scroll">
-        {TABS.map(([k, label]) => (
-          <button key={k} className={tab === k ? 'on' : ''} onClick={() => setSub(k)}>
+        {TABS[section].map(([k, label]) => (
+          <button key={k} className={tab === k ? 'on' : ''} onClick={() => setSub(`${section}/${k}`)}>
             {label}
           </button>
         ))}
       </div>
-      {tab === 'food' && <FoodDiary />}
-      {tab === 'meals' && <MealPlanner />}
-      {tab === 'foods' && <Foods />}
-      {tab === 'body' && <Body />}
-      {tab === 'plans' && (
-        <CrudList<WorkoutPlan>
-          table="plans"
-          rows={plans}
-          defaults={() => ({ exercises: [], schedule: { freq: 'weekly', interval: 1, start: t } })}
-          sort={(a, b) => (a.schedule ? nextOccurrence(a.schedule, t) ?? '~' : '~').localeCompare(b.schedule ? nextOccurrence(b.schedule, t) ?? '~' : '~')}
-          empty="Plan your sessions (e.g. Push, Pull, Legs, 5k run) with exercises, sets and weights. Scheduled ones show up in My Day."
-          renderRow={(p) => {
-            const next = p.schedule && nextOccurrence(p.schedule, t);
-            return (
-              <div className="row">
-                <div className="grow">
-                  <b>{p.name}</b>
-                  <div className="meta">{[p.schedule && describeSchedule(p.schedule), next && `next ${relativeLabel(next, t).toLowerCase()}`].filter(Boolean).join(' · ')}</div>
-                  {p.exercises.length > 0 && (
-                    <div className="meta">
-                      {p.exercises
-                        .slice(0, 4)
-                        .map((e) => `${e.name}${e.sets ? ` ${e.sets}×${e.reps ?? ''}` : ''}${e.weight ? ` @${e.weight}kg` : ''}`)
-                        .join(' · ')}
-                      {p.exercises.length > 4 && ` +${p.exercises.length - 4}`}
-                    </div>
-                  )}
-                </div>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    logFromPlan(p);
-                  }}
-                >
-                  Log it
-                </button>
-              </div>
-            );
-          }}
-        />
-      )}
-      {tab === 'log' && (
-        <CrudList<WorkoutLog>
-          table="workouts"
-          rows={logs}
-          noun="workout"
-          defaults={() => ({ date: t, entries: [] })}
-          sort={(a, b) => b.date.localeCompare(a.date)}
-          empty="Log a workout here, or tap Log it on a plan to start from its exercises."
-          renderRow={(l) => (
-            <div className="row">
-              <div className="grow">
-                <b>{l.name}</b> {l.feeling ? FEEL[l.feeling] : ''}
-                <div className="meta">{[formatDate(l.date), l.minutes && `${l.minutes} min`, l.entries?.length && `${l.entries.length} exercises`].filter(Boolean).join(' · ')}</div>
-              </div>
-            </div>
+      {section === 'workouts' && tab === 'week' && <WorkoutWeek />}
+      {section === 'workouts' && tab === 'plans' && <WorkoutPlans />}
+      {section === 'workouts' && tab === 'log' && <WorkoutLogList />}
+      {section === 'workouts' && tab === 'progress' && <WorkoutProgress />}
+      {section === 'workouts' && tab === 'records' && <WorkoutRecords />}
+      {section === 'food' && tab === 'today' && <FoodToday />}
+      {section === 'food' && tab === 'plan' && <MealPlanner />}
+      {section === 'food' && tab === 'foods' && <Foods />}
+      {section === 'food' && tab === 'trends' && <FoodTrends />}
+      {section === 'food' && tab === 'body' && <Body />}
+    </div>
+  );
+}
+
+function HealthHome({ open }: { open: (s: Section, tab?: string) => void }) {
+  const t = today();
+  const logs = useRows<WorkoutLog>('workouts');
+  const plans = useRows<WorkoutPlan>('plans');
+  const meals = useRows<MealEntry>('meals');
+  const water = useRows<Water>('water');
+  const tg = useTargets();
+  const goals = useGoals();
+  const live = useLive();
+  const thisWeek = logs.filter((l) => l.date >= weekStart(t)).length;
+  const streak = weekStreak(logs, t);
+  const next = plans
+    .map((p) => ({ p, d: p.schedule ? nextOccurrence(p.schedule, t) : undefined }))
+    .filter((x) => x.d && !(x.d === t && logs.some((l) => l.planId === x.p.id && l.date === t)))
+    .sort((a, b) => a.d!.localeCompare(b.d!))[0];
+  const eaten = sumMacros(meals.filter((m) => m.date === t));
+  const ml = water.filter((w) => w.date === t).reduce((a, w) => a + w.ml, 0);
+  const foodStreak = loggingStreak(meals, t);
+  const last = [...logs].sort((a, b) => b.date.localeCompare(a.date))[0];
+  const pct = (v: number, of: number) => `${Math.min(100, of ? (v / of) * 100 : 0)}%`;
+
+  return (
+    <div className="page">
+      <h1>Health</h1>
+      <div className="big-sections">
+        <button className="big-section workouts" onClick={() => open('workouts')}>
+          <span className="big-icon">🏋️</span>
+          <span className="big-title">Workouts</span>
+          <span className="big-stat">
+            <b>{thisWeek}</b> of {goals.workoutsPerWeek} this week
+          </span>
+          <span className="bar">
+            <i style={{ width: pct(thisWeek, goals.workoutsPerWeek) }} />
+          </span>
+          <span className="big-meta">
+            {live ? `In progress: ${live.name}` : next ? `Next: ${next.p.name}, ${relativeLabel(next.d!, t).toLowerCase()}` : 'No sessions planned'}
+            {streak > 0 && ` · 🔥 ${streak} wk`}
+          </span>
+          {last && (
+            <span className="big-meta">
+              Last: {last.name}, {agoLabel(last.date, t)}
+            </span>
           )}
-        />
-      )}
-      {tab === 'records' &&
-        (pbs.size === 0 ? (
-          <div className="empty">Log workouts with weights and your heaviest lift per exercise shows up here.</div>
-        ) : (
-          <ul className="cards">
-            {[...pbs.entries()]
-              .sort((a, b) => a[0].localeCompare(b[0]))
-              .map(([k, v]) => (
-                <li key={k} className="card">
-                  <div className="row">
-                    <b className="grow" style={{ textTransform: 'capitalize' }}>
-                      {k}
-                    </b>
-                    <span className="amount">{v.weight} kg</span>
-                  </div>
-                  <div className="meta">
-                    {v.reps && `${v.reps} reps · `}
-                    {formatDate(v.date)}
-                  </div>
-                </li>
-              ))}
-          </ul>
-        ))}
+        </button>
+        <button className="big-section food" onClick={() => open('food')}>
+          <span className="big-icon">🍽</span>
+          <span className="big-title">Food</span>
+          <span className="big-stat">
+            {tg ? (
+              <>
+                <b>{Math.round(Math.max(0, tg.kcal - eaten.kcal))}</b> kcal left today
+              </>
+            ) : (
+              <>
+                <b>{Math.round(eaten.kcal)}</b> kcal today
+              </>
+            )}
+          </span>
+          <span className="bar">
+            <i style={{ width: pct(eaten.kcal, tg?.kcal ?? 0) }} className={tg && eaten.kcal > tg.kcal * 1.05 ? 'over' : ''} />
+          </span>
+          <span className="big-meta">
+            💧 {(ml / 1000).toFixed(1)} of {goals.waterMl / 1000} L · {Math.round(eaten.protein)} g protein
+            {foodStreak > 1 && ` · 🔥 ${foodStreak} days`}
+          </span>
+        </button>
+      </div>
+      <h2>Quick actions</h2>
+      <div className="quick-actions">
+        <button onClick={() => (next && next.d === t ? startWorkout(next.p) : startWorkout())}>
+          ▶<span>{next && next.d === t ? `Start ${next.p.name}` : 'Start a workout'}</span>
+        </button>
+        <button onClick={() => open('food', 'today')}>
+          🍽<span>Log food</span>
+        </button>
+        <button onClick={() => addWater(t, 250)}>
+          💧<span>+ Glass of water</span>
+        </button>
+        <button onClick={() => openEdit({ table: 'weights', initial: { date: t } })}>
+          ⚖️<span>Weigh in</span>
+        </button>
+        <button onClick={() => openEdit({ table: 'workouts', initial: { date: t, entries: [], kind: 'cardio', name: 'Run' } })}>
+          🏃<span>Log a run</span>
+        </button>
+        <button onClick={() => open('food', 'plan')}>
+          🛒<span>Meal plan & shopping</span>
+        </button>
+      </div>
+      <p className="muted small-text">Longer trends live in Food → Trends and Workouts → Progress.</p>
     </div>
   );
 }

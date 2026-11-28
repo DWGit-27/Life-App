@@ -117,7 +117,7 @@ export function ExercisesInput({ value, onChange }: { value?: Exercise[]; onChan
       )}
       {list.map((x, i) => (
         <div key={i} className="ex-row">
-          <input value={x.name} placeholder="e.g. Squat" onChange={(e) => set(i, { name: e.target.value })} />
+          <input value={x.name} list="ex-lib" placeholder="e.g. Squat" onChange={(e) => set(i, { name: e.target.value })} />
           <input type="number" inputMode="numeric" value={x.sets ?? ''} placeholder="sets" onChange={(e) => set(i, { sets: num(e.target.value) })} aria-label="Sets" />
           <input value={x.reps ?? ''} placeholder="reps" onChange={(e) => set(i, { reps: e.target.value })} aria-label="Reps" />
           <input type="number" inputMode="decimal" step="0.5" value={x.weight ?? ''} placeholder="kg" onChange={(e) => set(i, { weight: num(e.target.value) })} aria-label="Weight kg" />

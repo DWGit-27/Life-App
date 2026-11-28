@@ -147,11 +147,19 @@ export interface InventoryItem extends Base {
   notes?: string;
 }
 
+export interface SetDone {
+  reps?: number;
+  weight?: number;
+  done: boolean;
+}
+
 export interface Exercise {
   name: string;
   sets?: number;
   reps?: string;
   weight?: number;
+  /** per-set results recorded in live workout mode */
+  setsDone?: SetDone[];
 }
 
 export interface WorkoutPlan extends Base {
@@ -168,7 +176,14 @@ export interface WorkoutLog extends Base {
   minutes?: number;
   entries: Exercise[];
   feeling?: number; // 1-5
+  kind?: 'strength' | 'cardio' | 'other';
+  distanceKm?: number;
   notes?: string;
+}
+
+export interface Water extends Base {
+  date: ISODate;
+  ml: number;
 }
 
 /** Moves one occurrence of a source to another date. */
@@ -219,6 +234,8 @@ export interface MealPlan extends Base, Macros {
 export interface Weight extends Base {
   date: ISODate;
   kg: number;
+  waistCm?: number;
+  bodyFat?: number;
   notes?: string;
 }
 
@@ -249,6 +266,7 @@ export class LifeDB extends Dexie {
   meals!: EntityTable<MealEntry, 'id'>;
   mealplans!: EntityTable<MealPlan, 'id'>;
   weights!: EntityTable<Weight, 'id'>;
+  water!: EntityTable<Water, 'id'>;
 
   constructor() {
     super('life-app');
@@ -277,12 +295,13 @@ export class LifeDB extends Dexie {
       mealplans: 'id, date, updatedAt',
       weights: 'id, date, updatedAt',
     });
+    this.version(4).stores({ water: 'id, date, updatedAt' });
   }
 }
 
 export const db = new LifeDB();
 
-export const DATA_TABLES = ['tasks', 'completions', 'bills', 'policies', 'house', 'loans', 'budget', 'txns', 'objectives', 'investments', 'inventory', 'plans', 'workouts', 'snoozes', 'foods', 'meals', 'mealplans', 'weights'] as const;
+export const DATA_TABLES = ['tasks', 'completions', 'bills', 'policies', 'house', 'loans', 'budget', 'txns', 'objectives', 'investments', 'inventory', 'plans', 'workouts', 'snoozes', 'foods', 'meals', 'mealplans', 'weights', 'water'] as const;
 export type DataTable = (typeof DATA_TABLES)[number];
 
 export function uid(): string {

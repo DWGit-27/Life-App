@@ -9,6 +9,9 @@ import Search from './components/Search';
 import { useAgenda } from './components/Agenda';
 import { GlobalEditor, openEdit } from './registry';
 import { ToastHost } from './toast';
+import { ExerciseDatalist, LiveWorkout } from './modules/health/LiveWorkout';
+import { useRows } from './components/Crud';
+import type { WorkoutLog } from './db';
 import { prefs, useOnline, useUpdate } from './prefs';
 import { Modal } from './components/Form';
 import { today } from './lib/dates';
@@ -28,7 +31,8 @@ const NAV: { id: Page; label: string; icon: string }[] = [
 const LEGACY: Record<string, [Page, string]> = { bills: ['money', 'bills'], insurance: ['money', 'insurance'], loans: ['money', 'loans'] };
 
 const fromHash = (): [Page, string | undefined] => {
-  const [p, sub] = location.hash.replace('#/', '').split('/');
+  const [p, ...rest] = location.hash.replace('#/', '').split('/');
+  const sub = rest.join('/') || undefined;
   if (LEGACY[p]) return LEGACY[p];
   if (!NAV.some((n) => n.id === p)) return ['today', undefined];
   // Re-open the tab you last used in this section.
@@ -92,6 +96,7 @@ export default function App() {
     go(page, s);
   };
   const agenda = useAgenda(0);
+  const workoutLogs = useRows<WorkoutLog>('workouts');
   const due = agenda.filter((i) => i.date <= today()).length;
   useEffect(() => {
     // Number on the installed app's icon (where the phone/OS supports it).
@@ -169,6 +174,8 @@ export default function App() {
           </table>
         </Modal>
       )}
+      <LiveWorkout history={workoutLogs} />
+      <ExerciseDatalist />
       <ToastHost />
     </div>
   );
